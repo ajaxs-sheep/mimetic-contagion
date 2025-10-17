@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Command-line interface for mimetic cascade simulation.
+Command-line interface for mimetic scapegoating simulation.
 """
 
 import argparse
@@ -9,39 +9,34 @@ import random
 import os
 from datetime import datetime
 from .graph import SignedGraph
-from .simulator import MimeticCascadeSimulator
+from .simulator import MimeticContagionSimulator
 from .formatter import format_json, format_human_readable, format_simple_chain
 from .graph_loader import GraphLoader
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Simulate mimetic contagion in signed social graphs",
+        description="Simulate scapegoating contagion in signed social graphs",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Complete positive graph (small networks)
-  python cli.py --nodes Alice Betty Charlie David \\
+  # Complete positive graph with specified scapegoat and accuser
+  python run.py --nodes Alice Betty Charlie David \\
                 --initial all-positive \\
-                --perturb Alice:Betty \\
+                --scapegoat Betty \\
+                --accuser Alice \\
+                --seed 42
+
+  # Random scapegoat and accuser selection
+  python run.py --nodes Alice Betty Charlie David \\
+                --initial all-positive \\
                 --seed 42
 
   # Load custom graph from file
-  python cli.py --graph-file graphs/my_network.json \\
-                --perturb A:B \\
+  python run.py --graph-file graphs/my_network.json \\
+                --scapegoat NodeA \\
+                --accuser NodeB \\
                 --seed 42
-
-  # Load from CSV edge list
-  python cli.py --graph-file graphs/network.csv \\
-                --perturb NodeX:NodeY \\
-                --seed 42 \\
-                --rationality 0.8
-
-  # Load from text file and print to stdout
-  python cli.py --graph-file graphs/edges.txt \\
-                --perturb A:C \\
-                --seed 42 \\
-                --no-files
 
 Graph file formats:
   - JSON: {"nodes": [...], "edges": [{"source": "A", "target": "B", "sign": 1}, ...]}
@@ -50,6 +45,7 @@ Graph file formats:
 
 Notes:
   - Use --initial for complete graphs OR --graph-file for custom graphs
+  - If --scapegoat and --accuser not provided, random selection is used
   - Without --seed, results are non-deterministic (random tie-breaking)
   - Default format is 'all' (generates human.txt, json.json, chain.txt)
   - Files are automatically saved to output/ directory
@@ -75,8 +71,13 @@ Notes:
     )
 
     parser.add_argument(
-        "--perturb",
-        help="Edge to flip as perturbation (format: Node1:Node2). Optional - if not provided, starts cascade from initial imbalanced state"
+        "--scapegoat",
+        help="Node to mark as scapegoat (if not provided, randomly selected)"
+    )
+
+    parser.add_argument(
+        "--accuser",
+        help="Initial accuser node (if not provided, randomly selected from scapegoat's neighbors)"
     )
 
     parser.add_argument(
@@ -105,20 +106,6 @@ Notes:
     )
 
     parser.add_argument(
-        "--max-steps",
-        type=int,
-        default=1000,
-        help="Maximum cascade steps (default: 1000)"
-    )
-
-    parser.add_argument(
-        "--rationality",
-        type=float,
-        default=0.5,
-        help="Decision rationality: 0.0=random, 1.0=optimal, 0.5=balanced (default: 0.5)"
-    )
-
-    parser.add_argument(
         "--verbose",
         action="store_true",
         help="Show progress updates during simulation (useful for large graphs)"
@@ -139,7 +126,7 @@ Notes:
         print("Error: --nodes is required when using --initial", file=sys.stderr)
         sys.exit(1)
 
-    # Warn if no seed provided (non-deterministic behavior)
+    # Set random seed if provided
     if args.seed is None:
         print("WARNING: No --seed provided. Results will be non-deterministic.", file=sys.stderr)
         print("         Use --seed <number> for reproducible results.\n", file=sys.stderr)
@@ -170,29 +157,40 @@ Notes:
             print(f"Error loading graph file: {e}", file=sys.stderr)
             sys.exit(1)
 
-    # Parse perturbation edge (if provided)
-    perturbation = None
-    if args.perturb:
-        try:
-            node1, node2 = args.perturb.split(":")
-            if node1 not in graph.nodes or node2 not in graph.nodes:
-                print(f"Error: Nodes in perturbation must be from the graph nodes", file=sys.stderr)
-                sys.exit(1)
-            if not graph.has_edge(node1, node2):
-                print(f"Error: No edge between {node1} and {node2}", file=sys.stderr)
-                sys.exit(1)
-            perturbation = (node1, node2)
-        except ValueError:
-            print("Error: Perturbation must be in format Node1:Node2", file=sys.stderr)
+    # Select scapegoat and accuser
+    if args.scapegoat:
+        scapegoat = args.scapegoat
+        if scapegoat not in graph.nodes:
+            print(f"Error: Scapegoat '{scapegoat}' not in graph nodes", file=sys.stderr)
             sys.exit(1)
+    else:
+        # Pick random node as scapegoat
+        scapegoat = random.choice(list(graph.nodes))
+        print(f"Randomly selected scapegoat: {scapegoat}", file=sys.stderr)
+
+    if args.accuser:
+        accuser = args.accuser
+        if accuser not in graph.nodes:
+            print(f"Error: Accuser '{accuser}' not in graph nodes", file=sys.stderr)
+            sys.exit(1)
+        if accuser == scapegoat:
+            print("Error: Accuser and scapegoat cannot be the same node", file=sys.stderr)
+            sys.exit(1)
+        if not graph.has_edge(accuser, scapegoat):
+            print(f"Error: No edge between accuser '{accuser}' and scapegoat '{scapegoat}'", file=sys.stderr)
+            sys.exit(1)
+    else:
+        # Pick random neighbor of scapegoat as accuser
+        neighbors = graph.neighbors(scapegoat)
+        if not neighbors:
+            print(f"Error: Scapegoat '{scapegoat}' has no neighbors (isolated node)", file=sys.stderr)
+            sys.exit(1)
+        accuser = random.choice(neighbors)
+        print(f"Randomly selected accuser: {accuser} (neighbor of {scapegoat})", file=sys.stderr)
 
     # Run simulation
-    simulator = MimeticCascadeSimulator(graph, max_steps=args.max_steps, rationality=args.rationality, verbose=args.verbose)
-    if perturbation:
-        result = simulator.introduce_perturbation(perturbation)
-    else:
-        print("No perturbation - running cascade from initial state imbalances...", file=sys.stderr)
-        result = simulator.run_from_current_state()
+    simulator = MimeticContagionSimulator(graph, verbose=args.verbose)
+    result = simulator.introduce_accusation(scapegoat, accuser)
 
     # Format output
     outputs = []
@@ -228,11 +226,11 @@ Notes:
         else:
             nodes_str = "-".join(args.nodes) if args.nodes else "graph"
 
-        perturb_str = args.perturb.replace(":", "-") if args.perturb else "no-perturb"
+        scapegoat_str = scapegoat
+        accuser_str = accuser
         seed_str = f"seed{args.seed}" if args.seed is not None else "random"
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        base_name = f"{nodes_str}_{perturb_str}_{seed_str}"
+        base_name = f"{nodes_str}_{scapegoat_str}-scapegoat_{accuser_str}-accuser_{seed_str}"
 
         written_files = []
         for label, ext, content in outputs:
@@ -246,8 +244,13 @@ Notes:
             print(f"✓ {label}: {filepath}")
 
         print(f"\nAll outputs written to: {args.output_dir}/")
-        print(f"Steps: {len(result.cascade_steps)}")
-        print(f"Converged: {result.converged}")
+        print(f"Scapegoat: {scapegoat}")
+        print(f"Accuser: {accuser}")
+        print(f"Accusers: {len(result.accusers)}")
+        print(f"Defenders: {len(result.defenders)}")
+        print(f"Contagion succeeded: {result.contagion_succeeded}")
+        print(f"Is balanced: {result.is_balanced}")
+        print(f"Is all-against-one: {result.is_all_against_one}")
 
 
 if __name__ == "__main__":

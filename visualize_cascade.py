@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Visualize mimetic cascade as 2D circular layout animation.
+Visualize scapegoating contagion as 2D circular layout animation.
 """
 
 import argparse
@@ -34,9 +34,10 @@ def load_cascade_json(filepath):
     return data
 
 
-def create_frame(ax, nodes, edges, positions, step_info, highlight_edge=None):
+def create_frame(ax, nodes, edges, positions, step_info, highlight_edge=None,
+                scapegoat=None, accusers=None, defenders=None):
     """
-    Draw a single frame of the cascade.
+    Draw a single frame of the scapegoating contagion.
 
     Args:
         ax: Matplotlib axis
@@ -45,6 +46,9 @@ def create_frame(ax, nodes, edges, positions, step_info, highlight_edge=None):
         positions: Dict of {node: (x, y)}
         step_info: Dict with step metadata
         highlight_edge: Edge tuple to highlight (if any)
+        scapegoat: Name of scapegoat node
+        accusers: Set of accuser nodes
+        defenders: Set of defender nodes
     """
     ax.clear()
     ax.set_xlim(-1.3, 1.3)
@@ -79,29 +83,52 @@ def create_frame(ax, nodes, edges, positions, step_info, highlight_edge=None):
         ax.plot([x1, x2], [y1, y2], color=color, linewidth=linewidth,
                 alpha=alpha, zorder=1)
 
-    # Draw nodes
+    # Draw nodes with role-based colors
     for i, node in enumerate(nodes):
         x, y = positions[i]
-        ax.scatter(x, y, s=300, c='white', edgecolors='black',
-                  linewidths=2, zorder=2)
-        ax.text(x, y, node, ha='center', va='center', fontsize=8,
+
+        # Determine node color based on role
+        node_color = 'white'
+        edge_color = 'black'
+        edge_width = 2
+
+        if scapegoat and node == scapegoat:
+            node_color = 'lightcoral'  # Scapegoat in red
+            edge_color = 'darkred'
+            edge_width = 3
+        elif accusers and node in accusers:
+            node_color = 'lightblue'  # Accusers in blue
+            edge_color = 'darkblue'
+            edge_width = 2
+        elif defenders and node in defenders:
+            node_color = 'lightgreen'  # Defenders in green
+            edge_color = 'darkgreen'
+            edge_width = 3
+
+        ax.scatter(x, y, s=400, c=node_color, edgecolors=edge_color,
+                  linewidths=edge_width, zorder=2)
+        ax.text(x, y, node, ha='center', va='center', fontsize=9,
                fontweight='bold', zorder=3)
 
     # Add title and info
-    step_num = step_info.get('step', 0)
+    step_type = step_info.get('step_type', 'step')
     actor = step_info.get('actor', '')
-    edge_flip = step_info.get('edge_flip', '')
-    pressured = step_info.get('pressured', 0)
-    converged = step_info.get('converged', False)
+    action_desc = step_info.get('action_desc', '')
 
-    if step_num == 'Initial':
-        title = "Initial State (Perfect Harmony)"
-    elif step_num == 'PERTURB':
-        title = f"PERTURBATION: {edge_flip} becomes hostile"
-    elif converged:
-        title = f"✓ CONVERGED (Step {step_num})"
+    if step_type == 'initial':
+        title = "Initial State"
+    elif step_type == 'accusation':
+        title = f"ACCUSATION: {actor} accuses {scapegoat}"
+    elif step_type == 'contagion':
+        title = f"{actor}: {action_desc}"
+    elif step_type == 'final':
+        converged = step_info.get('converged', False)
+        if converged:
+            title = "✓ CONTAGION COMPLETE"
+        else:
+            title = "⚠ CONTAGION FAILED (defenders remain)"
     else:
-        title = f"Step {step_num}: {actor} flips {edge_flip}"
+        title = "Scapegoating Contagion"
 
     ax.text(0, 1.15, title, ha='center', va='center',
            fontsize=14, fontweight='bold')
@@ -110,47 +137,63 @@ def create_frame(ax, nodes, edges, positions, step_info, highlight_edge=None):
     pos_edges = sum(1 for s in edges.values() if s == 1)
     neg_edges = sum(1 for s in edges.values() if s == -1)
     stats = f"Positive: {pos_edges} | Negative: {neg_edges}"
-    if pressured > 0:
-        stats += f" | Pressured: {pressured}"
+
+    if accusers:
+        stats += f" | Accusers: {len(accusers)}"
+    if defenders:
+        stats += f" | Defenders: {len(defenders)}"
 
     ax.text(0, -1.15, stats, ha='center', va='center',
            fontsize=10, style='italic', color='gray')
 
     # Legend
-    green_patch = mpatches.Patch(color='green', label='Friendship (+)')
-    red_patch = mpatches.Patch(color='red', label='Enmity (-)')
-    ax.legend(handles=[green_patch, red_patch], loc='upper right',
+    patches = [
+        mpatches.Patch(color='green', label='Friendship (+)'),
+        mpatches.Patch(color='red', label='Enmity (-)'),
+    ]
+    if scapegoat:
+        patches.append(mpatches.Patch(color='lightcoral', label='Scapegoat'))
+    if accusers:
+        patches.append(mpatches.Patch(color='lightblue', label='Accuser'))
+    if defenders and len(defenders) > 0:
+        patches.append(mpatches.Patch(color='lightgreen', label='Defender'))
+
+    ax.legend(handles=patches, loc='upper right',
              fontsize=8, framealpha=0.9)
 
 
-def visualize_cascade(json_path, output_path=None, fps=2, show_all_steps=False,
-                     key_steps_only=False):
+def visualize_cascade(json_path, output_path=None, fps=2, pause_on_final=True):
     """
-    Create visualization of cascade.
+    Create visualization of scapegoating contagion.
 
     Args:
         json_path: Path to JSON cascade file
         output_path: Output file path (.gif or .mp4)
         fps: Frames per second for animation
-        show_all_steps: If True, show every single step
-        key_steps_only: If True, only show initial, key moments, and final
+        pause_on_final: If True, hold final frame for 3 seconds
     """
     # Load data
-    print(f"Loading cascade from {json_path}...", file=sys.stderr)
+    print(f"Loading scapegoating contagion from {json_path}...", file=sys.stderr)
     data = load_cascade_json(json_path)
 
     # Extract info
     initial_state = data['initial_state']
-    cascade_steps = data['cascade']
+    scapegoat = data['scapegoat']
+    initial_accuser = data['initial_accuser']
+    decisions = data['decisions']
     final_state = data['final_state']
-    converged = data['converged']
+    final_accusers = set(data['accusers'])
+    final_defenders = set(data['defenders'])
+    contagion_succeeded = data['contagion_succeeded']
 
     nodes = sorted(initial_state['nodes'])
     num_nodes = len(nodes)
 
     print(f"  Nodes: {num_nodes}", file=sys.stderr)
-    print(f"  Steps: {len(cascade_steps)}", file=sys.stderr)
-    print(f"  Converged: {converged}", file=sys.stderr)
+    print(f"  Scapegoat: {scapegoat}", file=sys.stderr)
+    print(f"  Initial Accuser: {initial_accuser}", file=sys.stderr)
+    print(f"  Decisions: {len(decisions)}", file=sys.stderr)
+    print(f"  Contagion succeeded: {contagion_succeeded}", file=sys.stderr)
 
     # Create circular layout
     positions = circular_layout(num_nodes)
@@ -158,7 +201,7 @@ def visualize_cascade(json_path, output_path=None, fps=2, show_all_steps=False,
     # Prepare frames data
     frames_data = []
 
-    # Initial state (before perturbation)
+    # Initial state
     initial_edges = {}
     for edge_data in initial_state['edges']:
         u, v = edge_data['nodes']
@@ -168,96 +211,114 @@ def visualize_cascade(json_path, output_path=None, fps=2, show_all_steps=False,
     frames_data.append({
         'edges': initial_edges.copy(),
         'step_info': {
-            'step': 'Initial',
+            'step_type': 'initial',
             'actor': '',
-            'edge_flip': '',
-            'pressured': 0,
-            'converged': False
+            'action_desc': ''
         },
-        'highlight_edge': None
+        'highlight_edge': None,
+        'scapegoat': None,
+        'accusers': set(),
+        'defenders': set()
     })
 
-    # Perturbation step (if present)
+    # Accusation step
     current_edges = initial_edges.copy()
+    accusers = {initial_accuser}
 
-    perturbation = data.get('perturbation')
-    if perturbation:
-        perturb_edge = tuple(perturbation['edge'])
-        from_sign = perturbation['from_sign']
-        to_sign = perturbation['to_sign']
+    # Find and flip accusation edge if needed
+    accuser_scapegoat_edge = None
+    for (u, v) in current_edges:
+        if (u == initial_accuser and v == scapegoat) or (v == initial_accuser and u == scapegoat):
+            accuser_scapegoat_edge = (u, v)
+            if current_edges[accuser_scapegoat_edge] == 1:
+                current_edges[accuser_scapegoat_edge] = -1
+            break
 
-        # Apply perturbation
-        current_edges[perturb_edge] = to_sign
-
-        frames_data.append({
-            'edges': current_edges.copy(),
-            'step_info': {
-                'step': 'PERTURB',
-                'actor': 'Initial',
-                'edge_flip': f"{perturb_edge[0]}↔{perturb_edge[1]}",
-                'pressured': 0,
-                'converged': False
-            },
-            'highlight_edge': perturb_edge
-        })
-
-    # Add each cascade step
-
-    for i, step in enumerate(cascade_steps):
-        step_num = step['step']
-        actor = step['actor']
-
-        if step.get('stuck'):
-            # Skip stuck steps in visualization
-            continue
-
-        edge = tuple(step['edge']) if step['edge'] else None
-        to_sign = step['to_sign']
-
-        if edge:
-            # Update edges
-            current_edges[edge] = to_sign
-            edge_str = f"{edge[0]}↔{edge[1]}"
-        else:
-            edge_str = "STUCK"
-
-        # Decide if we should include this frame
-        include = True
-        if key_steps_only:
-            # Only include first 5, then every 10th, then last 5
-            total = len(cascade_steps)
-            if not (i < 5 or i > total - 5 or i % 10 == 0):
-                include = False
-        elif not show_all_steps:
-            # Show every 5th step for medium-length cascades
-            if len(cascade_steps) > 50 and i % 5 != 0 and i != len(cascade_steps) - 1:
-                include = False
-
-        if include:
-            frames_data.append({
-                'edges': current_edges.copy(),
-                'step_info': {
-                    'step': step_num,
-                    'actor': actor,
-                    'edge_flip': edge_str,
-                    'pressured': len(step.get('new_pressured', [])),
-                    'converged': False
-                },
-                'highlight_edge': edge
-            })
-
-    # Final state
     frames_data.append({
         'edges': current_edges.copy(),
         'step_info': {
-            'step': len(cascade_steps),
-            'actor': '',
-            'edge_flip': '',
-            'pressured': 0,
-            'converged': converged
+            'step_type': 'accusation',
+            'actor': initial_accuser,
+            'action_desc': f'accuses {scapegoat}'
         },
-        'highlight_edge': None
+        'highlight_edge': accuser_scapegoat_edge,
+        'scapegoat': scapegoat,
+        'accusers': accusers.copy(),
+        'defenders': set()
     })
+
+    # Add each contagion decision
+    for decision in decisions:
+        node = decision['node']
+        action = decision['action']
+        reason = decision['reason']
+
+        if action:
+            edge_flipped = tuple(decision['edge_flipped'])
+            from_sign = decision['from_sign']
+            to_sign = decision['to_sign']
+
+            # Update edges
+            current_edges[edge_flipped] = to_sign
+
+            # Update accusers if joining
+            if action == 'join_accusers':
+                accusers.add(node)
+                action_desc = f"joins accusers (chose against {scapegoat})"
+            elif action == 'hear_accusation':
+                accusers.add(node)
+                action_desc = f"hears about {scapegoat}, forms negative opinion"
+            elif action == 'befriend_other':
+                action_desc = f"resolves --- triangle"
+            else:
+                action_desc = reason
+
+            frames_data.append({
+                'edges': current_edges.copy(),
+                'step_info': {
+                    'step_type': 'contagion',
+                    'actor': node,
+                    'action_desc': action_desc
+                },
+                'highlight_edge': edge_flipped,
+                'scapegoat': scapegoat,
+                'accusers': accusers.copy(),
+                'defenders': set()
+            })
+        else:
+            # No action (defender or neutral)
+            frames_data.append({
+                'edges': current_edges.copy(),
+                'step_info': {
+                    'step_type': 'contagion',
+                    'actor': node,
+                    'action_desc': reason
+                },
+                'highlight_edge': None,
+                'scapegoat': scapegoat,
+                'accusers': accusers.copy(),
+                'defenders': {node} if 'Defender' in reason else set()
+            })
+
+    # Final state (hold for emphasis)
+    final_step_info = {
+        'step_type': 'final',
+        'actor': '',
+        'action_desc': '',
+        'converged': contagion_succeeded
+    }
+
+    # Add final frame (repeat 3x for pause effect if requested)
+    repeat_count = int(fps * 3) if pause_on_final else 1
+    for _ in range(repeat_count):
+        frames_data.append({
+            'edges': current_edges.copy(),
+            'step_info': final_step_info,
+            'highlight_edge': None,
+            'scapegoat': scapegoat,
+            'accusers': final_accusers,
+            'defenders': final_defenders
+        })
 
     print(f"  Frames: {len(frames_data)}", file=sys.stderr)
 
@@ -267,7 +328,8 @@ def visualize_cascade(json_path, output_path=None, fps=2, show_all_steps=False,
     def update(frame_idx):
         frame = frames_data[frame_idx]
         create_frame(ax, nodes, frame['edges'], positions,
-                    frame['step_info'], frame['highlight_edge'])
+                    frame['step_info'], frame['highlight_edge'],
+                    frame['scapegoat'], frame['accusers'], frame['defenders'])
         return ax,
 
     anim = FuncAnimation(fig, update, frames=len(frames_data),
@@ -291,24 +353,21 @@ def visualize_cascade(json_path, output_path=None, fps=2, show_all_steps=False,
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Visualize mimetic cascade as 2D circular layout animation",
+        description="Visualize scapegoating contagion as 2D circular layout animation",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Create GIF animation (2 fps, smart frame selection)
-  python visualize_cascade.py output/harmony_20_n0-n1_seed42_json.json -o cascade.gif
-
-  # Show every single step (slower, more frames)
-  python visualize_cascade.py output/harmony_20_n0-n1_seed42_json.json -o cascade.gif --all-steps
-
-  # Show only key moments (faster, fewer frames)
-  python visualize_cascade.py output/harmony_20_n0-n1_seed42_json.json -o cascade.gif --key-steps
+  # Create GIF animation of scapegoating contagion
+  python visualize_cascade.py /tmp/Alice-Betty-Charlie-David_Betty-scapegoat_Alice-accuser_seed42_json.json -o contagion.gif
 
   # Faster playback (4 fps)
-  python visualize_cascade.py output/harmony_20_n0-n1_seed42_json.json -o cascade.gif --fps 4
+  python visualize_cascade.py cascade.json -o contagion.gif --fps 4
 
   # Just display without saving
-  python visualize_cascade.py output/harmony_20_n0-n1_seed42_json.json
+  python visualize_cascade.py cascade.json
+
+  # No pause on final frame
+  python visualize_cascade.py cascade.json -o contagion.gif --no-pause
         """
     )
 
@@ -330,15 +389,9 @@ Examples:
     )
 
     parser.add_argument(
-        '--all-steps',
+        '--no-pause',
         action='store_true',
-        help='Show every single step (many frames)'
-    )
-
-    parser.add_argument(
-        '--key-steps',
-        action='store_true',
-        help='Show only key moments (fewer frames)'
+        help='Do not pause on final frame'
     )
 
     args = parser.parse_args()
@@ -349,16 +402,15 @@ Examples:
         sys.exit(1)
 
     # Validate output format
-    if args.output and not args.output.endswith('.gif'):
-        print("Error: Output must be .gif format", file=sys.stderr)
+    if args.output and not (args.output.endswith('.gif') or args.output.endswith('.mp4')):
+        print("Error: Output must be .gif or .mp4 format", file=sys.stderr)
         sys.exit(1)
 
     visualize_cascade(
         args.json_file,
         args.output,
         args.fps,
-        args.all_steps,
-        args.key_steps
+        pause_on_final=not args.no_pause
     )
 
 

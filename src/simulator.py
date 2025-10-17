@@ -1,352 +1,351 @@
 """
-Mimetic Cascade Simulator: Propagate social contagion through a signed graph.
+Mimetic Scapegoating Simulator: Propagate scapegoating contagion through a signed graph.
 """
 
-from typing import List, Tuple, Dict, Set
-from collections import deque
+from typing import List, Tuple, Dict, Set, Optional
 import random
-import math
 from .graph import SignedGraph
-from .analyzer import find_pressured_nodes, get_node_unbalanced_triangles, calculate_triangle_delta
-from .decision import choose_flip, get_decision_context
+from .analyzer import find_unbalanced_triangles
 
 
-class CascadeStep:
-    """Represents one step in the cascade."""
+class ContagionDecision:
+    """Represents one node's decision during contagion."""
 
     def __init__(
         self,
-        step_num: int,
-        actor: str,
-        edge: Tuple[str, str],
-        old_sign: int,
-        new_sign: int,
-        decision_context: Dict,
-        new_pressured_nodes: Set[str],
-        stuck: bool = False
+        node: str,
+        action: Optional[str],
+        reason: str,
+        edge_flipped: Optional[Tuple[str, str]] = None,
+        old_sign: Optional[int] = None,
+        new_sign: Optional[int] = None
     ):
-        self.step_num = step_num
-        self.actor = actor
-        self.edge = edge
+        self.node = node
+        self.action = action  # "join_accusers", "befriend_accuser", or None
+        self.reason = reason
+        self.edge_flipped = edge_flipped
         self.old_sign = old_sign
         self.new_sign = new_sign
-        self.decision_context = decision_context
-        self.new_pressured_nodes = new_pressured_nodes
-        self.stuck = stuck  # True if actor couldn't act due to no-reversal rule
 
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""
         result = {
-            "step": self.step_num,
-            "actor": self.actor,
-            "edge": list(self.edge) if self.edge else None,
-            "from_sign": self.old_sign,
-            "to_sign": self.new_sign,
-            "new_pressured": sorted(list(self.new_pressured_nodes))
+            "node": self.node,
+            "action": self.action,
+            "reason": self.reason
         }
-        if self.stuck:
-            result["stuck"] = True
+        if self.edge_flipped:
+            result["edge_flipped"] = list(self.edge_flipped)
+            result["from_sign"] = self.old_sign
+            result["to_sign"] = self.new_sign
         return result
 
 
-class CascadeResult:
-    """Results of running a cascade simulation."""
+class ScapegoatResult:
+    """Results of scapegoating simulation."""
 
     def __init__(
         self,
         initial_state: SignedGraph,
-        perturbation: Tuple[str, str],
-        cascade_steps: List[CascadeStep],
+        scapegoat: str,
+        initial_accuser: str,
+        decisions: List[ContagionDecision],
         final_state: SignedGraph,
-        converged: bool
+        accusers: Set[str],
+        defenders: Set[str],
+        is_balanced: bool,
+        is_all_against_one: bool
     ):
         self.initial_state = initial_state
-        self.perturbation = perturbation
-        self.cascade_steps = cascade_steps
+        self.scapegoat = scapegoat
+        self.initial_accuser = initial_accuser
+        self.decisions = decisions
         self.final_state = final_state
-        self.converged = converged
+        self.accusers = accusers
+        self.defenders = defenders
+        self.is_balanced = is_balanced
+        self.is_all_against_one = is_all_against_one
+        self.contagion_succeeded = len(defenders) == 0
 
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""
-        result = {
+        return {
             "initial_state": self.initial_state.to_dict(),
-            "cascade": [step.to_dict() for step in self.cascade_steps],
+            "scapegoat": self.scapegoat,
+            "initial_accuser": self.initial_accuser,
+            "decisions": [d.to_dict() for d in self.decisions],
             "final_state": self.final_state.to_dict(),
-            "converged": self.converged,
-            "total_steps": len(self.cascade_steps)
+            "accusers": sorted(list(self.accusers)),
+            "defenders": sorted(list(self.defenders)),
+            "is_balanced": self.is_balanced,
+            "is_all_against_one": self.is_all_against_one,
+            "contagion_succeeded": self.contagion_succeeded
         }
 
-        if self.perturbation is not None:
-            result["perturbation"] = {
-                "edge": list(self.perturbation),
-                "from_sign": self.initial_state.get_edge(*self.perturbation),
-                "to_sign": -self.initial_state.get_edge(*self.perturbation)
-            }
-        else:
-            result["perturbation"] = None
 
-        return result
+class MimeticContagionSimulator:
+    """Simulates scapegoating contagion in signed social graphs."""
 
-
-class MimeticCascadeSimulator:
-    """Simulates mimetic contagion in signed social graphs."""
-
-    def __init__(self, graph: SignedGraph, max_steps: int = 1000, rationality: float = 0.5, verbose: bool = False):
+    def __init__(self, graph: SignedGraph, verbose: bool = False):
         """
         Args:
             graph: The initial signed graph
-            max_steps: Maximum number of cascade steps before stopping
-            rationality: Decision rationality (0.0=myopic, 1.0=globally optimal, 0.5=balanced)
             verbose: If True, print progress updates to stderr
         """
         self.initial_graph = graph.copy()
         self.graph = graph.copy()
-        self.max_steps = max_steps
-        self.rationality = rationality
         self.verbose = verbose
 
-    def introduce_perturbation(self, edge: Tuple[str, str]) -> CascadeResult:
+    def introduce_accusation(self, scapegoat: str, accuser: str) -> ScapegoatResult:
         """
-        Introduce a perturbation (flip one edge) and propagate the cascade.
+        Introduce an accusation and propagate scapegoating contagion.
 
         Args:
-            edge: (node1, node2) edge to flip
+            scapegoat: The node to be scapegoated
+            accuser: The initial accuser
 
         Returns:
-            CascadeResult with full simulation history
-        """
-        # Store initial state
-        initial_state = self.initial_graph.copy()
-
-        # Track actor-edge pairs (each actor can only flip an edge once)
-        self.actor_flipped_edges = set()
-
-        # Flip the edge (perturbation)
-        canonical_edge = tuple(sorted(edge))
-        self.graph.flip_edge(*edge)
-
-        # Perturbation is bidirectionally locked - NEITHER actor can touch this edge
-        self.actor_flipped_edges.add((edge[0], canonical_edge))
-        self.actor_flipped_edges.add((edge[1], canonical_edge))
-
-        # Run the cascade
-        cascade_steps = self._propagate_cascade()
-
-        # Check if converged
-        converged = len(cascade_steps) < self.max_steps
-
-        return CascadeResult(
-            initial_state=initial_state,
-            perturbation=edge,
-            cascade_steps=cascade_steps,
-            final_state=self.graph.copy(),
-            converged=converged
-        )
-
-    def run_from_current_state(self) -> CascadeResult:
-        """
-        Run cascade from current graph state without any perturbation.
-
-        Useful for testing if randomly initialized graphs converge naturally.
-
-        Returns:
-            CascadeResult with full simulation history
-        """
-        # Store initial state
-        initial_state = self.initial_graph.copy()
-
-        # Track actor-edge pairs (each actor can only flip an edge once)
-        self.actor_flipped_edges = set()
-
-        # No perturbation - just run from current state
-        # Run the cascade
-        cascade_steps = self._propagate_cascade()
-
-        # Check if converged
-        converged = len(cascade_steps) < self.max_steps
-
-        return CascadeResult(
-            initial_state=initial_state,
-            perturbation=None,  # No perturbation
-            cascade_steps=cascade_steps,
-            final_state=self.graph.copy(),
-            converged=converged
-        )
-
-    def _propagate_cascade(self) -> List[CascadeStep]:
-        """
-        Propagate the cascade until stability or max steps.
-
-        Uses round-based selection with rationality parameter:
-        - Each round: find all pressured actors
-        - For each, determine their preferred move
-        - Calculate triangle delta for each move
-        - Select move based on rationality (1.0=best, 0.0=random, 0.5=weighted)
-
-        Returns:
-            List of CascadeStep objects
+            ScapegoatResult with full simulation results
         """
         import sys
-        import time
-
-        cascade_steps = []
-        step_num = 0
-        start_time = time.time()
-        last_progress_time = start_time
 
         if self.verbose:
-            t0 = time.time()
-            initial_pressured = len(find_pressured_nodes(self.graph))
-            t_init = time.time() - t0
-            print(f"Starting cascade... {initial_pressured} initially pressured nodes (took {t_init:.3f}s to find)", file=sys.stderr)
+            print(f"\n{'='*60}", file=sys.stderr)
+            print(f"SCAPEGOATING CONTAGION", file=sys.stderr)
+            print(f"{'='*60}", file=sys.stderr)
+            print(f"Scapegoat: {scapegoat}", file=sys.stderr)
+            print(f"Initial Accuser: {accuser}", file=sys.stderr)
+            print(f"{'='*60}\n", file=sys.stderr)
 
-        while step_num < self.max_steps:
-            step_start = time.time()
+        # Store initial state
+        initial_state = self.initial_graph.copy()
 
-            # Find all currently pressured nodes
-            t0 = time.time()
-            pressured_nodes = find_pressured_nodes(self.graph)
-            t_find_pressured = time.time() - t0
+        # Flip accuser↔scapegoat to negative (the initial accusation)
+        old_sign = self.graph.get_edge(accuser, scapegoat)
+        if old_sign != -1:
+            self.graph.flip_edge(accuser, scapegoat)
 
-            if not pressured_nodes:
-                # No more pressured nodes, stable!
-                if self.verbose:
-                    print(f"✓ Converged at step {step_num}!", file=sys.stderr)
-                break
+        # Initialize accusers set with initial accuser
+        accusers = {accuser}
 
-            # Collect all possible moves for this round
-            t0 = time.time()
-            possible_moves = []  # List of (actor, edge, triangle_delta)
-
-            for actor in pressured_nodes:
-                # Get this actor's preferred move
-                edge_to_flip = choose_flip(self.graph, actor, self.actor_flipped_edges)
-
-                if edge_to_flip is None:
-                    # Actor is stuck
-                    possible_moves.append((actor, None, -1000))  # Large negative penalty
-                else:
-                    # Calculate triangle delta for this move
-                    triangle_delta = calculate_triangle_delta(self.graph, edge_to_flip)
-                    possible_moves.append((actor, edge_to_flip, triangle_delta))
-            t_compute_moves = time.time() - t0
-
-            if not possible_moves:
-                # All stuck, stop
-                if self.verbose:
-                    print(f"✗ All actors stuck at step {step_num}", file=sys.stderr)
-                break
-
-            # Select move based on rationality parameter
-            t0 = time.time()
-            selected_actor, selected_edge, selected_delta = self._select_move(possible_moves)
-            t_select = time.time() - t0
-
-            # Get decision context for output
-            t0 = time.time()
-            decision_context = get_decision_context(self.graph, selected_actor)
-            t_context = time.time() - t0
-
-            if selected_edge is None:
-                # Selected actor is stuck
-                step = CascadeStep(
-                    step_num=step_num + 1,
-                    actor=selected_actor,
-                    edge=None,
-                    old_sign=0,
-                    new_sign=0,
-                    decision_context=decision_context,
-                    new_pressured_nodes=set(),
-                    stuck=True
-                )
-                cascade_steps.append(step)
-                step_num += 1
-
-                step_time = time.time() - step_start
-                if self.verbose:
-                    print(f"  Step {step_num}: {selected_actor} STUCK | total: {step_time:.3f}s", file=sys.stderr)
+        # IMPORTANT: Add any pre-existing enemies to accusers set BEFORE contagion
+        # This ensures that when friends check "do I have accuser friends?", pre-existing
+        # enemies count as accusers (they're already against the scapegoat)
+        for node in self.graph.nodes:
+            if node == scapegoat:
                 continue
+            if self.graph.has_edge(node, scapegoat) and \
+               self.graph.get_edge(node, scapegoat) == -1:
+                accusers.add(node)
 
-            # Execute the selected flip
-            t0 = time.time()
-            old_sign = self.graph.get_edge(*selected_edge)
-            self.graph.flip_edge(*selected_edge)
-            new_sign = self.graph.get_edge(*selected_edge)
+        # Propagate contagion (SINGLE PASS)
+        decisions = self._propagate_scapegoat_contagion(scapegoat, accusers)
 
-            # Mark that this actor has acted on this edge (no reversals for this actor)
-            canonical_edge = tuple(sorted(selected_edge))
-            self.actor_flipped_edges.add((selected_actor, canonical_edge))
+        # Check final state
+        is_balanced = len(find_unbalanced_triangles(self.graph)) == 0
+        is_all_against_one = self._check_all_against_one(scapegoat)
 
-            # Find new pressured nodes created by this flip
-            pressured_after = find_pressured_nodes(self.graph)
-            new_pressured = pressured_after - pressured_nodes
-            t_execute = time.time() - t0
+        # Find defenders (anyone who's still friend of scapegoat)
+        defenders = set()
+        for node in self.graph.nodes:
+            if node == scapegoat:
+                continue
+            if self.graph.has_edge(node, scapegoat) and \
+               self.graph.get_edge(node, scapegoat) == 1:
+                defenders.add(node)
 
-            # Record this step
-            step = CascadeStep(
-                step_num=step_num + 1,
-                actor=selected_actor,
-                edge=selected_edge,
-                old_sign=old_sign,
-                new_sign=new_sign,
-                decision_context=decision_context,
-                new_pressured_nodes=new_pressured
-            )
-            cascade_steps.append(step)
+        if self.verbose:
+            print(f"\nFinal state:", file=sys.stderr)
+            print(f"  Accusers: {sorted(list(accusers))}", file=sys.stderr)
+            print(f"  Defenders: {sorted(list(defenders))}", file=sys.stderr)
+            print(f"  Balanced: {is_balanced}", file=sys.stderr)
+            print(f"  All-against-one: {is_all_against_one}", file=sys.stderr)
+            print(f"  Contagion succeeded: {len(defenders) == 0}\n", file=sys.stderr)
 
-            step_num += 1
+        return ScapegoatResult(
+            initial_state=initial_state,
+            scapegoat=scapegoat,
+            initial_accuser=accuser,
+            decisions=decisions,
+            final_state=self.graph.copy(),
+            accusers=accusers,
+            defenders=defenders,
+            is_balanced=is_balanced,
+            is_all_against_one=is_all_against_one
+        )
 
-            # Verbose output every step
-            step_time = time.time() - step_start
-            if self.verbose:
-                u, v = selected_edge
-                sign_str = "+" if new_sign == 1 else "-"
-                print(f"  Step {step_num}: {selected_actor} flips {u}↔{v} → {sign_str} | "
-                      f"find: {t_find_pressured:.3f}s, moves: {t_compute_moves:.3f}s, "
-                      f"select: {t_select:.3f}s, exec: {t_execute:.3f}s | "
-                      f"total: {step_time:.3f}s", file=sys.stderr)
-
-        return cascade_steps
-
-    def _select_move(self, possible_moves: List[Tuple[str, Tuple[str, str], int]]) -> Tuple[str, Tuple[str, str], int]:
+    def _propagate_scapegoat_contagion(self, scapegoat: str, accusers: Set[str]) -> List[ContagionDecision]:
         """
-        Select a move from possible moves based on rationality parameter.
+        Propagate scapegoating contagion through the network (BFS ORDER).
+
+        Rules:
+        1. Friend of accuser + Friend of scapegoat → Flip against scapegoat
+        2. Enemy of scapegoat → Resolve all --- triangles by befriending third parties
+        3. Friend of accuser + No edge to scapegoat → Hear about scapegoat, create negative edge
+
+        Process nodes in BFS order starting from initial accuser to simulate
+        information spreading through social network.
 
         Args:
-            possible_moves: List of (actor, edge, triangle_delta) tuples
+            scapegoat: The scapegoat node
+            accusers: Set of accusers (modified in place)
 
         Returns:
-            Selected (actor, edge, triangle_delta) tuple
+            List of ContagionDecision objects
         """
-        if self.rationality == 1.0:
-            # Fully rational: always pick best triangle delta
-            return max(possible_moves, key=lambda x: x[2])
+        import sys
+        from collections import deque
 
-        elif self.rationality == 0.0:
-            # Fully myopic: random choice
-            return random.choice(possible_moves)
+        decisions = []
 
-        else:
-            # Probabilistic: weight by triangle delta with temperature
-            # Higher rationality = more weight on good moves
-            temperature = 1.0 / (self.rationality + 0.01)  # Avoid division by zero
+        # BFS traversal starting from initial accuser
+        # This ensures information spreads through social network realistically
+        initial_accuser = list(accusers)[0]  # Should only be one at this point
 
-            # Calculate weights using softmax
-            deltas = [m[2] for m in possible_moves]
-            max_delta = max(deltas)
+        # Edge case check: Does the accuser have any friends?
+        # If the accuser has only enemies, they can't credibly spread accusations
+        # (they're already isolated/scapegoated themselves)
+        accuser_has_friends = any(
+            self.graph.get_edge(initial_accuser, neighbor) == 1
+            for neighbor in self.graph.neighbors(initial_accuser)
+            if neighbor != scapegoat
+        )
 
-            # Shift deltas to avoid overflow
-            exp_deltas = [math.exp((d - max_delta) / temperature) for d in deltas]
-            total = sum(exp_deltas)
-            probabilities = [e / total for e in exp_deltas]
+        if not accuser_has_friends and self.verbose:
+            print(f"⚠ WARNING: {initial_accuser} has no friends (only enemies)!", file=sys.stderr)
+            print(f"  → Accusation cannot spread through friendship network", file=sys.stderr)
+            print(f"  → {initial_accuser} is likely already isolated/scapegoated\n", file=sys.stderr)
 
-            # Sample based on probabilities
-            r = random.random()
-            cumulative = 0
-            for i, prob in enumerate(probabilities):
-                cumulative += prob
-                if r < cumulative:
-                    return possible_moves[i]
+        visited = {scapegoat}  # Don't process scapegoat
+        queue = deque([initial_accuser])
+        visited.add(initial_accuser)
 
-            # Fallback (shouldn't reach here)
-            return possible_moves[-1]
+        if self.verbose:
+            print(f"Processing nodes in BFS order from {initial_accuser}...", file=sys.stderr)
+
+        # Process nodes AS WE DISCOVER THEM in BFS
+        # This ensures accusation spreads correctly: when you discover a friend, they hear about it
+        while queue:
+            current = queue.popleft()
+
+            # Import here to avoid circular dependency
+            from .decision import apply_contagion_rule
+
+            # Process THIS node now (before discovering its neighbors)
+            actions_list = apply_contagion_rule(
+                self.graph, current, scapegoat, accusers
+            )
+
+            for action, reason, target_node in actions_list:
+                if action == "join_accusers":
+                    # Rule 1: Flip against scapegoat
+                    old_sign = self.graph.get_edge(current, scapegoat)
+                    self.graph.flip_edge(current, scapegoat)
+                    new_sign = self.graph.get_edge(current, scapegoat)
+
+                    decision = ContagionDecision(
+                        node=current,
+                        action=action,
+                        reason=reason,
+                        edge_flipped=(current, scapegoat),
+                        old_sign=old_sign,
+                        new_sign=new_sign
+                    )
+                    decisions.append(decision)
+                    accusers.add(current)
+
+                    if self.verbose:
+                        print(f"  {current}: {reason}", file=sys.stderr)
+                        print(f"    → {current}↔{scapegoat}: {'+' if old_sign == 1 else '-'} → {'+' if new_sign == 1 else '-'}", file=sys.stderr)
+
+                elif action == "hear_accusation":
+                    # Rule 3: Hear about scapegoat, create negative edge
+                    self.graph.add_edge(current, scapegoat, -1)
+
+                    decision = ContagionDecision(
+                        node=current,
+                        action=action,
+                        reason=reason,
+                        edge_flipped=(current, scapegoat),
+                        old_sign=0,  # No edge before
+                        new_sign=-1
+                    )
+                    decisions.append(decision)
+                    accusers.add(current)
+
+                    if self.verbose:
+                        print(f"  {current}: {reason}", file=sys.stderr)
+                        print(f"    → {current}↔{scapegoat}: (no edge) → -", file=sys.stderr)
+
+                elif action == "befriend_other":
+                    # Rule 2: Befriend third party to resolve --- triangle
+                    old_sign = self.graph.get_edge(current, target_node)
+                    self.graph.flip_edge(current, target_node)
+                    new_sign = self.graph.get_edge(current, target_node)
+
+                    decision = ContagionDecision(
+                        node=current,
+                        action=action,
+                        reason=reason,
+                        edge_flipped=(current, target_node),
+                        old_sign=old_sign,
+                        new_sign=new_sign
+                    )
+                    decisions.append(decision)
+
+                    if self.verbose:
+                        print(f"  {current}: {reason}", file=sys.stderr)
+                        print(f"    → {current}↔{target_node}: {'+' if old_sign == 1 else '-'} → {'+' if new_sign == 1 else '-'}", file=sys.stderr)
+
+                else:
+                    # No action taken (defender or neutral)
+                    decision = ContagionDecision(
+                        node=current,
+                        action=None,
+                        reason=reason
+                    )
+                    decisions.append(decision)
+
+                    if self.verbose:
+                        print(f"  {current}: {reason}", file=sys.stderr)
+
+            # AFTER processing current node, add its friends to queue
+            # This way, friends can hear from current if it became an accuser
+            for neighbor in self.graph.neighbors(current):
+                if neighbor not in visited and self.graph.get_edge(current, neighbor) == 1:
+                    visited.add(neighbor)
+                    queue.append(neighbor)
+
+        # Add any remaining nodes not reached by BFS (disconnected friendship components)
+        for node in self.graph.nodes:
+            if node not in visited:
+                # Process unreachable nodes
+                actions_list = apply_contagion_rule(
+                    self.graph, node, scapegoat, accusers
+                )
+                for action, reason, target_node in actions_list:
+                    if action:
+                        decision = ContagionDecision(
+                            node=node,
+                            action=action,
+                            reason=reason
+                        )
+                        decisions.append(decision)
+                        if self.verbose:
+                            print(f"  {node}: {reason}", file=sys.stderr)
+
+        if self.verbose:
+            print(f"\nContagion complete. {len([d for d in decisions if d.action])} actions taken.", file=sys.stderr)
+
+        return decisions
+
+    def _check_all_against_one(self, scapegoat: str) -> bool:
+        """Check if all nodes (except scapegoat) are enemies of scapegoat."""
+        for node in self.graph.nodes:
+            if node == scapegoat:
+                continue
+            if not self.graph.has_edge(node, scapegoat):
+                return False
+            if self.graph.get_edge(node, scapegoat) != -1:
+                return False
+        return True

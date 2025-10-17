@@ -1,174 +1,124 @@
 """
-Decision logic: How nodes decide which edge to flip when under pressure.
+Decision logic: How nodes respond to scapegoating accusations.
 """
 
-from typing import Tuple, Optional, List, Dict, Set
-import random
+from typing import Tuple, Optional, Set
 from .graph import SignedGraph
-from .analyzer import (
-    get_node_unbalanced_triangles,
-    compute_social_score,
-    Triangle
-)
 
 
-class FlipOption:
-    """Represents a possible edge flip and its context."""
-
-    def __init__(
-        self,
-        actor: str,
-        target: str,
-        current_sign: int,
-        target_score: int,
-        triangle_type: str,
-        triangle: Triangle
-    ):
-        self.actor = actor
-        self.target = target
-        self.current_sign = current_sign
-        self.target_score = target_score
-        self.triangle_type = triangle_type
-        self.triangle = triangle
-
-    def __repr__(self):
-        action = "Break with" if self.current_sign == 1 else "Ally with"
-        return f"{action} {self.target} (score={self.target_score})"
+def has_accuser_friend(graph: SignedGraph, node: str, accusers: Set[str]) -> bool:
+    """Check if node has any friends who are accusers."""
+    for accuser in accusers:
+        if graph.has_edge(node, accuser) and graph.get_edge(node, accuser) == 1:
+            return True
+    return False
 
 
-def get_flip_options(graph: SignedGraph, actor: str, actor_flipped_edges: Set[Tuple[str, Tuple[str, str]]] = None) -> List[FlipOption]:
-    """
-    Get all possible edge flips for a node under pressure.
+def has_accuser_enemy(graph: SignedGraph, node: str, accusers: Set[str]) -> bool:
+    """Check if node has any enemies who are accusers."""
+    for accuser in accusers:
+        if graph.has_edge(node, accuser) and graph.get_edge(node, accuser) == -1:
+            return True
+    return False
 
-    Args:
-        graph: The signed graph
-        actor: The node making the decision
-        actor_flipped_edges: Set of (actor, edge) tuples tracking who has acted on which edges
 
-    Returns:
-        List of FlipOption objects
-    """
-    if actor_flipped_edges is None:
-        actor_flipped_edges = set()
+def find_unbalanced_triangles_with_scapegoat(graph: SignedGraph, node: str, scapegoat: str):
+    """Find all --- triangles involving this node and the scapegoat."""
+    from .analyzer import Triangle
 
-    options = []
-    unbalanced_triangles = get_node_unbalanced_triangles(graph, actor)
+    unbalanced = []
 
-    # Track which edges we've already considered
-    considered_edges = set()
+    # Check all potential third nodes
+    for third_node in graph.nodes:
+        if third_node == node or third_node == scapegoat:
+            continue
 
-    for triangle in unbalanced_triangles:
-        # Get the other two nodes in this triangle
-        other_nodes = [n for n in triangle.nodes if n != actor]
+        # Check if triangle exists (all three edges present)
+        if not (graph.has_edge(node, scapegoat) and
+                graph.has_edge(node, third_node) and
+                graph.has_edge(scapegoat, third_node)):
+            continue
 
-        for target in other_nodes:
-            edge = tuple(sorted([actor, target]))
-            if edge in considered_edges:
-                continue
-            considered_edges.add(edge)
+        # Get edge signs
+        node_scapegoat = graph.get_edge(node, scapegoat)
+        node_third = graph.get_edge(node, third_node)
+        scapegoat_third = graph.get_edge(scapegoat, third_node)
 
-            # Skip edges where THIS ACTOR has already acted (no reversals for this actor)
-            if (actor, edge) in actor_flipped_edges:
-                continue
-
-            current_sign = graph.get_edge(actor, target)
-            target_score = compute_social_score(graph, target)
-
-            option = FlipOption(
-                actor=actor,
-                target=target,
-                current_sign=current_sign,
-                target_score=target_score,
-                triangle_type=triangle.get_type(),
-                triangle=triangle
+        # Check if it's a --- triangle (all negative)
+        if node_scapegoat == -1 and node_third == -1 and scapegoat_third == -1:
+            triangle = Triangle(
+                nodes=(node, scapegoat, third_node),
+                edges=(node_scapegoat, scapegoat_third, node_third)
             )
-            options.append(option)
+            unbalanced.append((triangle, third_node))
 
-    return options
+    return unbalanced
 
 
-def choose_flip(graph: SignedGraph, actor: str, actor_flipped_edges: Set[Tuple[str, Tuple[str, str]]] = None) -> Optional[Tuple[str, str]]:
+def apply_contagion_rule(
+    graph: SignedGraph,
+    node: str,
+    scapegoat: str,
+    accusers: Set[str]
+):
     """
-    Decide which edge to flip based on mimetic logic.
+    Apply scapegoating contagion rules to a node.
 
     Rules:
-    - For ++- triangles: Break with the person with LOWEST score (easiest to hate)
-    - For --- triangles: Ally with the person with HIGHEST score (easiest to love)
-    - No reversals: Each actor can only flip an edge once
+    1. Friend of accuser + Friend of scapegoat → Flip against scapegoat (join accusers)
+    2. Enemy of scapegoat → In --- triangle: befriend the third person
+    3. Friend of accuser + NO edge to scapegoat → Hear about them, create negative edge (join accusers)
 
     Args:
         graph: The signed graph
-        actor: The node making the decision
-        actor_flipped_edges: Set of (actor, edge) tuples tracking who has acted on which edges
+        node: The node to evaluate
+        scapegoat: The scapegoat
+        accusers: Set of current accusers
 
     Returns:
-        (actor, target) tuple for the edge to flip, or None if no valid options
+        List of (action, reason, target_node) tuples - one for each triangle to resolve
     """
-    options = get_flip_options(graph, actor, actor_flipped_edges)
+    actions = []
 
-    if not options:
-        return None
+    # Check if node has edge to scapegoat
+    if not graph.has_edge(node, scapegoat):
+        # Rule 3: If friend of accuser, HEAR about scapegoat and create negative edge
+        if has_accuser_friend(graph, node, accusers):
+            triggering_accuser = next(
+                (a for a in accusers if graph.has_edge(node, a) and graph.get_edge(node, a) == 1),
+                None
+            )
+            reason = f"Heard from {triggering_accuser} about {scapegoat}"
+            return [("hear_accusation", reason, scapegoat)]
+        else:
+            return [(None, "No connection to scapegoat or accusers", None)]
 
-    # Separate options by type
-    breaking_options = [opt for opt in options if opt.current_sign == 1]  # ++- case
-    allying_options = [opt for opt in options if opt.current_sign == -1]  # --- case
+    node_scapegoat_relation = graph.get_edge(node, scapegoat)
 
-    chosen_option = None
+    # Rule 1: Friend of accuser + Friend of scapegoat → Flip against scapegoat
+    if has_accuser_friend(graph, node, accusers) and node_scapegoat_relation == 1:
+        # Find triggering accuser (first friend who is accuser)
+        triggering_accuser = next(
+            (a for a in accusers if graph.has_edge(node, a) and graph.get_edge(node, a) == 1),
+            None
+        )
+        reason = f"Friend of {triggering_accuser}, chose them over {scapegoat}"
+        return [("join_accusers", reason, scapegoat)]
 
-    # Priority: Try to break friendships first (++- triangles)
-    if breaking_options:
-        # Choose person with lowest score (easiest to hate)
-        min_score = min(opt.target_score for opt in breaking_options)
-        candidates = [opt for opt in breaking_options if opt.target_score == min_score]
-        chosen_option = random.choice(candidates)
+    # Rule 2: Enemy of scapegoat → Find all --- triangles and resolve them
+    if node_scapegoat_relation == -1:
+        # Find all --- triangles involving this node and scapegoat
+        unbalanced_triangles = find_unbalanced_triangles_with_scapegoat(graph, node, scapegoat)
 
-    # If no breaking options, try to form alliances (--- triangles)
-    elif allying_options:
-        # Choose person with highest score (easiest to love)
-        max_score = max(opt.target_score for opt in allying_options)
-        candidates = [opt for opt in allying_options if opt.target_score == max_score]
-        chosen_option = random.choice(candidates)
+        if unbalanced_triangles:
+            for triangle, third_node in unbalanced_triangles:
+                # Befriend the third person to resolve this --- triangle
+                reason = f"In --- triangle ({node}, {scapegoat}, {third_node}), befriend {third_node}"
+                actions.append(("befriend_other", reason, third_node))
+            return actions
+        else:
+            # Enemy of scapegoat but no --- triangles
+            return [(None, f"Already enemy of {scapegoat} (no --- triangles)", None)]
 
-    if chosen_option:
-        return (actor, chosen_option.target)
-
-    return None
-
-
-def get_decision_context(graph: SignedGraph, actor: str) -> Dict:
-    """
-    Get full decision context for a node (for human-readable output).
-
-    Returns:
-        Dictionary with:
-        - unbalanced_triangles: List of triangles causing pressure
-        - options: List of possible flips
-        - scores: Dict of target -> score
-        - chosen: The chosen flip option
-    """
-    unbalanced = get_node_unbalanced_triangles(graph, actor)
-    options = get_flip_options(graph, actor)
-
-    # Compute scores for all relevant nodes
-    relevant_nodes = set()
-    for opt in options:
-        relevant_nodes.add(opt.target)
-
-    scores = {node: compute_social_score(graph, node) for node in relevant_nodes}
-
-    # Get the chosen flip
-    chosen_edge = choose_flip(graph, actor)
-
-    # Find the chosen option
-    chosen_option = None
-    if chosen_edge:
-        target = chosen_edge[1] if chosen_edge[0] == actor else chosen_edge[0]
-        chosen_option = next((opt for opt in options if opt.target == target), None)
-
-    return {
-        "unbalanced_triangles": unbalanced,
-        "options": options,
-        "scores": scores,
-        "chosen": chosen_option,
-        "chosen_edge": chosen_edge
-    }
+    # Friend of scapegoat but no accuser friends (defender)
+    return [(None, f"Defender of {scapegoat} (no accuser friends)", None)]
