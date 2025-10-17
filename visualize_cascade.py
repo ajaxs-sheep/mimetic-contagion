@@ -121,10 +121,12 @@ def create_frame(ax, nodes, edges, positions, step_info, highlight_edge=None,
         title = f"ACCUSATION: {actor} accuses {scapegoat}"
     elif step_type == 'contagion':
         title = f"{actor}: {action_desc}"
+    elif step_type == 'cleanup':
+        title = f"COMMUNITY UNITY: {actor} {action_desc}"
     elif step_type == 'final':
         converged = step_info.get('converged', False)
         if converged:
-            title = "✓ CONTAGION COMPLETE"
+            title = "✓ ORDER THROUGH VIOLENCE (complete unity)"
         else:
             title = "⚠ CONTAGION FAILED (defenders remain)"
     else:
@@ -261,6 +263,10 @@ def visualize_cascade(json_path, output_path=None, fps=2, pause_on_final=True):
             # Update edges
             current_edges[edge_flipped] = to_sign
 
+            # Determine step type and description
+            is_cleanup = 'Community unity' in reason
+            step_type = 'cleanup' if is_cleanup else 'contagion'
+
             # Update accusers if joining
             if action == 'join_accusers':
                 accusers.add(node)
@@ -269,14 +275,17 @@ def visualize_cascade(json_path, output_path=None, fps=2, pause_on_final=True):
                 accusers.add(node)
                 action_desc = f"hears about {scapegoat}, forms negative opinion"
             elif action == 'befriend_other':
-                action_desc = f"resolves --- triangle"
+                if is_cleanup:
+                    action_desc = f"befriends enemy (community unity)"
+                else:
+                    action_desc = f"resolves --- triangle"
             else:
                 action_desc = reason
 
             frames_data.append({
                 'edges': current_edges.copy(),
                 'step_info': {
-                    'step_type': 'contagion',
+                    'step_type': step_type,
                     'actor': node,
                     'action_desc': action_desc
                 },

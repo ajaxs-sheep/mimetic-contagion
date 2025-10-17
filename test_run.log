@@ -1,0 +1,189 @@
+SCAPEGOATING CONTAGION TEST SUITE
+Testing complete community unity from small to large networks
+============================================================
+
+============================================================
+Testing 3 nodes...
+============================================================
+  Graph generated: 3 edges (0.000s)
+  Scapegoat: n2, Accuser: n0
+  Simulation time: 0.001s
+  Decisions: 2 (BFS: 2, Cleanup: 0)
+  Accusers: 2/2
+  Defenders: 0
+  Community edges: 1 positive, 0 negative
+  All-against-one: True
+  Balanced: True
+  ✓ COMPLETE UNITY
+  Saved: output/test_3nodes_seed42_json.json
+
+============================================================
+Testing 4 nodes...
+============================================================
+  Graph generated: 6 edges (0.000s)
+  Scapegoat: n3, Accuser: n0
+  Simulation time: 0.000s
+  Decisions: 3 (BFS: 3, Cleanup: 0)
+  Accusers: 3/3
+  Defenders: 0
+  Community edges: 3 positive, 0 negative
+  All-against-one: True
+  Balanced: True
+  ✓ COMPLETE UNITY
+  Saved: output/test_4nodes_seed42_json.json
+
+============================================================
+Testing 5 nodes...
+============================================================
+  Graph generated: 10 edges (0.000s)
+  Scapegoat: n4, Accuser: n0
+  Simulation time: 0.000s
+  Decisions: 4 (BFS: 4, Cleanup: 0)
+  Accusers: 4/4
+  Defenders: 0
+  Community edges: 6 positive, 0 negative
+  All-against-one: True
+  Balanced: True
+  ✓ COMPLETE UNITY
+  Saved: output/test_5nodes_seed42_json.json
+
+============================================================
+Testing 10 nodes...
+============================================================
+  Graph generated: 33 edges (0.007s)
+  Scapegoat: n6, Accuser: n0
+  Simulation time: 0.000s
+  Decisions: 15 (BFS: 9, Cleanup: 6)
+  Accusers: 9/9
+  Defenders: 0
+  Community edges: 27 positive, 0 negative
+  All-against-one: True
+  Balanced: True
+  ✓ COMPLETE UNITY
+  Saved: output/test_10nodes_seed42_json.json
+
+============================================================
+Testing 20 nodes...
+============================================================
+  Graph generated: 69 edges (0.000s)
+  Scapegoat: n13, Accuser: n4
+  Simulation time: 0.001s
+  Decisions: 36 (BFS: 19, Cleanup: 17)
+  Accusers: 19/19
+  Defenders: 0
+  Community edges: 61 positive, 0 negative
+  All-against-one: True
+  Balanced: True
+  ✓ COMPLETE UNITY
+  Saved: output/test_20nodes_seed42_json.json
+
+============================================================
+Testing 30 nodes...
+============================================================
+  Graph generated: 114 edges (0.001s)
+  Scapegoat: n8, Accuser: n5
+  Simulation time: 0.002s
+  Decisions: 59 (BFS: 29, Cleanup: 30)
+  Accusers: 29/29
+  Defenders: 0
+  Community edges: 106 positive, 0 negative
+  All-against-one: True
+  Balanced: True
+  ✓ COMPLETE UNITY
+  Saved: output/test_30nodes_seed42_json.json
+
+============================================================
+Testing 50 nodes...
+============================================================
+  Graph generated: 173 edges (0.002s)
+  Scapegoat: n24, Accuser: n6
+  Simulation time: 0.008s
+  Decisions: 92 (BFS: 51, Cleanup: 41)
+  Accusers: 49/49
+  Defenders: 0
+  Community edges: 165 positive, 0 negative
+  All-against-one: True
+  Balanced: True
+  ✓ COMPLETE UNITY
+
+============================================================
+Testing 100 nodes...
+============================================================
+  Graph generated: 360 edges (0.008s)
+  Scapegoat: n25, Accuser: n40
+  Simulation time: 0.043s
+  Decisions: 195 (BFS: 101, Cleanup: 94)
+  Accusers: 99/99
+  Defenders: 0
+  Community edges: 352 positive, 0 negative
+  All-against-one: True
+  Balanced: True
+  ✓ COMPLETE UNITY
+
+============================================================
+Testing 200 nodes...
+============================================================
+  Graph generated: 696 edges (0.030s)
+  Scapegoat: n192, Accuser: n91
+  Simulation time: 0.296s
+  Decisions: 366 (BFS: 199, Cleanup: 167)
+  Accusers: 199/199
+  Defenders: 0
+  Community edges: 689 positive, 0 negative
+  All-against-one: True
+  Balanced: True
+  ✓ COMPLETE UNITY
+
+============================================================
+Testing 500 nodes...
+============================================================
+  Graph generated: 1788 edges (0.181s)
+  Scapegoat: n36, Accuser: n119
+  Simulation time: 4.072s
+  Decisions: 930 (BFS: 499, Cleanup: 431)
+  Accusers: 499/499
+  Defenders: 0
+  Community edges: 1780 positive, 0 negative
+  All-against-one: True
+  Balanced: True
+  ✓ COMPLETE UNITY
+
+============================================================
+Testing 1000 nodes...
+============================================================
+  Graph generated: 3568 edges (0.810s)
+  Scapegoat: n309, Accuser: n298
+  Simulation time: 32.016s
+  Decisions: 1870 (BFS: 1000, Cleanup: 870)
+  Accusers: 999/999
+  Defenders: 0
+  Community edges: 3560 positive, 0 negative
+  All-against-one: True
+  Balanced: True
+  ✓ COMPLETE UNITY
+
+============================================================
+SUMMARY REPORT
+============================================================
+
+Total tests: 11
+Successful: 11
+Failed: 0
+
+✓ ALL TESTS PASSED - Complete unity achieved for all sizes!
+
+Nodes    Edges    Gen(s)     Sim(s)     Decisions    Unity   
+------------------------------------------------------------
+3        3        0.000      0.001      2            ✓       
+4        6        0.000      0.000      3            ✓       
+5        10       0.000      0.000      4            ✓       
+10       33       0.007      0.000      15           ✓       
+20       69       0.000      0.001      36           ✓       
+30       114      0.001      0.002      59           ✓       
+50       173      0.002      0.008      92           ✓       
+100      360      0.008      0.043      195          ✓       
+200      696      0.030      0.296      366          ✓       
+500      1788     0.181      4.072      930          ✓       
+1000     3568     0.810      32.016     1870         ✓       
+
+Full report saved to: output/test_report.json

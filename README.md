@@ -1,16 +1,16 @@
-# Mimetic Contagion Simulator
+# Mimetic Scapegoating Simulator
 
-A Python-based simulator for modeling mimetic contagion in signed social graphs, inspired by René Girard's theory of scapegoating and structural balance theory.
+A Python-based simulator for modeling scapegoating contagion in signed social graphs, based on René Girard's theory of the scapegoat mechanism and structural balance theory.
 
 ## What is This?
 
-This tool simulates how social conflicts propagate through networks of relationships. Given an initial perturbation (e.g., two friends becoming enemies), it models how other actors respond to structural imbalances, potentially leading to:
+This tool simulates how scapegoating accusations propagate through social networks as **information contagion**. Given an initial accusation against a scapegoat, it models how the accusation spreads through friendship networks, potentially leading to:
 
-- **Scapegoating**: Unanimous exclusion of one victim
-- **Factional splits**: Fragmentation into opposing groups
-- **Stable configurations**: Balanced relationship structures
+- **All-against-one**: Complete social isolation of the scapegoat
+- **Partial scapegoating**: Some defenders remain loyal
+- **Defender strongholds**: Coordinated resistance to the accusation
 
-Unlike optimization-based approaches, this models **contagion as cascading events** where actors make local decisions based on social pressure.
+Unlike optimization-based approaches, this models scapegoating as **single-pass information contagion** through BFS traversal, where actors make local decisions based on mimetic social pressure.
 
 ## Installation
 
@@ -26,272 +26,318 @@ cd mimetic-contagion
 ### Basic Usage
 
 ```bash
-python cli.py --nodes Alice Betty Charlie David \
+python run.py --nodes Alice Betty Charlie David \
               --initial all-positive \
-              --perturb Alice:Betty \
+              --scapegoat Betty \
+              --accuser Alice \
               --seed 42
 ```
 
-This simulates a "Salem witch trial" scenario:
-1. Starts with 4 people who are all friends
-2. Alice and Betty have a falling out (perturbation)
-3. Others must choose sides under social pressure
-4. System converges to a stable state (often scapegoating)
+This simulates:
+1. Start with 4 people who are all friends
+2. Alice accuses Betty (flips Alice↔Betty to negative)
+3. Information spreads through friendship network (BFS from Alice)
+4. Friends of Alice hear the accusation and must choose
+5. System converges to stable state (usually all-against-one)
 
 ### Output
 
 By default, generates 3 files in `output/` directory:
 
-- `*_human.txt` - Human-readable step-by-step narrative
-- `*_json.json` - Machine-readable JSON format
-- `*_chain.txt` - Concise event chain
+- `*_human.txt` - Human-readable step-by-step narrative with reasoning
+- `*_json.json` - Machine-readable JSON with complete graph states
+- `*_chain.txt` - Concise event log
 
 Example output (chain format):
 ```
-PERTURB: Alice↔Betty +→-
-STEP 1: David flips David↔Alice +→-
-STEP 2: Alice flips Alice↔Charlie +→-
-```
+INITIAL ACCUSATION: Alice accuses Betty
+  Edge Alice↔Betty: + → -
 
-Final state: Alice scapegoated (score: -3)
+CONTAGION (BFS order from Alice):
+  Charlie: Friend of Alice, chose them over Betty
+    → Charlie↔Betty: + → -
+  David: Friend of Alice, chose them over Betty
+    → David↔Betty: + → -
+
+FINAL: 3 accusers, 0 defenders, ALL-AGAINST-ONE
+```
 
 ## Command-Line Options
 
-### Required Arguments
+### Graph Creation
 
-- `--nodes` - List of node names (space-separated)
-  ```bash
-  --nodes Alice Betty Charlie David Eve Frank
-  ```
+**Option 1: Complete graphs** (everyone connected to everyone):
+```bash
+--nodes Alice Betty Charlie David --initial all-positive
+--nodes Alice Betty Charlie David --initial all-negative
+```
 
-- `--perturb` - Initial edge to flip (format: `Node1:Node2`)
-  ```bash
-  --perturb Alice:Betty
-  ```
+**Option 2: Load from file**:
+```bash
+--graph-file graphs/my_network.json
+```
 
-### Optional Arguments
+Supported formats: JSON, CSV, TXT (see examples in `graphs/`)
 
-- `--initial` - Initial graph state (default: `all-positive`)
-  - `all-positive`: Everyone starts as friends
-  - `all-negative`: Everyone starts as enemies
+### Scapegoat and Accuser Selection
 
-- `--seed` - Random seed for reproducibility (default: none)
-  ```bash
-  --seed 42  # Deterministic results
-  ```
-  **Warning**: Without `--seed`, results are non-deterministic due to random tie-breaking.
+```bash
+--scapegoat Betty      # Node to be scapegoated
+--accuser Alice        # Initial accuser
+```
 
-- `--rationality` - Decision rationality (default: `0.5`)
-  - `0.0` = Myopic/random choices
-  - `0.5` = Balanced (weighted by global impact)
-  - `1.0` = Globally optimal (always picks best move)
-  ```bash
-  --rationality 1.0  # Efficient scapegoating
-  ```
+If not provided, randomly selected (requires `--seed` for reproducibility).
 
-- `--max-steps` - Maximum cascade steps (default: `1000`)
-  ```bash
-  --max-steps 500
-  ```
+### Output Control
 
-- `--format` - Output format (default: `all`)
-  - `human` - Human-readable narrative only
-  - `json` - JSON only
-  - `chain` - Concise chain only
-  - `all` - Generate all three formats
-
-- `--output-dir` - Output directory (default: `output/`)
-  ```bash
-  --output-dir results/
-  ```
-
+- `--format {human,json,chain,all}` - Output format (default: all)
+- `--output-dir DIR` - Output directory (default: `output/`)
 - `--no-files` - Print to stdout instead of saving files
-  ```bash
-  --no-files  # Print results to terminal
-  ```
+
+### Reproducibility
+
+```bash
+--seed 42              # Random seed for deterministic results
+```
+
+**IMPORTANT**: Without `--seed`, results are non-deterministic.
+
+### Debugging
+
+```bash
+--verbose              # Print BFS traversal order and decisions to stderr
+```
 
 ## Examples
 
 ### Deterministic Scapegoating
 
 ```bash
-# High rationality → efficient path to scapegoating
-python cli.py --nodes Alice Betty Charlie David \
+python run.py --nodes Alice Betty Charlie David \
               --initial all-positive \
-              --perturb Alice:Betty \
-              --seed 42 \
-              --rationality 1.0
+              --scapegoat Betty \
+              --accuser Alice \
+              --seed 42
 ```
 
-Output: Alice scapegoated in 2 steps (score: -3)
+Output: Betty completely isolated (all-against-one)
 
-### Chaotic/Random Behavior
+### Random Selection
 
 ```bash
-# Low rationality → random, chaotic decisions
-python cli.py --nodes Alice Betty Charlie David \
+python run.py --nodes Alice Betty Charlie David Eve Frank \
               --initial all-positive \
-              --perturb Alice:Betty \
-              --seed 42 \
-              --rationality 0.0
+              --seed 123
 ```
 
-Output: 10+ steps with potentially stuck states
+Output: Random scapegoat and accuser chosen, contagion spreads
 
-### Large Graph
+### Load Custom Graph
 
 ```bash
-# 6-node graph with balanced rationality
-python cli.py --nodes Alice Betty Charlie David Eve Frank \
-              --initial all-positive \
-              --perturb Alice:Betty \
-              --seed 123 \
-              --rationality 0.5
+python run.py --graph-file graphs/sparse_30.json \
+              --scapegoat n15 \
+              --accuser n23 \
+              --seed 42
 ```
 
 ### Print to Terminal
 
 ```bash
-# Quick testing without saving files
-python cli.py --nodes Alice Betty Charlie David \
+python run.py --nodes Alice Betty Charlie David \
               --initial all-positive \
-              --perturb Alice:Betty \
+              --scapegoat Betty \
+              --accuser Alice \
               --seed 42 \
               --format chain \
               --no-files
-```
-
-### Custom Output Directory
-
-```bash
-# Save to specific directory
-python cli.py --nodes Alice Betty Charlie David \
-              --initial all-positive \
-              --perturb Alice:Betty \
-              --seed 42 \
-              --output-dir experiments/trial1/
 ```
 
 ## Understanding Output
 
 ### Human-Readable Format
 
-Shows detailed decision-making process for each step:
+Shows detailed BFS traversal and decision-making:
 
 ```
---- STEP 1 ---
-DAVID under pressure
+=== CONTAGION (BFS order from Alice) ===
 
-  Unbalanced triangles: 1
-    • (Alice, Betty, David) [-++]
+Charlie:
+  Friend of accuser Alice, chose them over scapegoat Betty
+  Action: Charlie↔Betty: + → -
+  → Charlie joins accusers
 
-  Options to resolve (++- → break friendship with lowest score):
-    • Break with Alice: score = 1
-    • Break with Betty: score = 1
-
-  Decision: TIE → random choice
-  → Easier to hate: Alice
-  Action: David→Alice: + → -
+David:
+  Heard from Charlie about Betty (no prior edge)
+  Action: David↔Betty: ∅ → -
+  → David joins accusers
 ```
 
 ### Chain Format
 
 Concise event log:
 ```
-PERTURB: Alice↔Betty +→-
-STEP 1: David flips David↔Alice +→-
-STEP 2: Alice flips Alice↔Charlie +→-
+INITIAL: Alice accuses Betty (Alice↔Betty: + → -)
+STEP 1: Charlie flips Charlie↔Betty: + → -
+STEP 2: David hears from Charlie, creates David↔Betty: ∅ → -
+FINAL: ALL-AGAINST-ONE (Betty isolated)
 ```
 
 ### JSON Format
 
 Machine-readable complete history including:
-- Initial and final graph states
-- Every cascade step with decision context
-- Triangle counts and social scores
-
-### Social Scores
-
-Final social scores indicate outcomes:
-- **Score -3** in 4-node graph = scapegoated (all enemies)
-- **Score +3** in 4-node graph = popular (all friends)
-- **Score ±1** = factional split or partial exclusion
+- Initial and final graph states (nodes, edges, signs)
+- Every BFS step with node decisions
+- Rule applied (join_accusers, hear_accusation, befriend_other)
+- Accusers set, defenders set, balance metrics
 
 ## Key Concepts
 
+### Information Contagion Model
+
+Scapegoating spreads as **information through friendship networks**:
+
+1. **Initial accusation**: Accuser flips edge to scapegoat negative
+2. **BFS propagation**: Information spreads through friendship edges (you hear gossip from friends)
+3. **Mimetic decisions**: Nodes choose based on local triangles and social pressure
+4. **Single-pass convergence**: One BFS traversal, no iteration required
+
+### Three Contagion Rules
+
+**Rule 1: Forced Choice** (Friend Dilemma)
+- **Condition**: You're friend of both accuser and scapegoat
+- **Triangle**: `(you, accuser, scapegoat)` with `[+, +, -]` (unbalanced)
+- **Action**: Flip against scapegoat (join accusers)
+- **Rationale**: "My friend hates them, so I must too" (mimetic pressure)
+
+**Rule 2: Resolve --- Triangles** (Enemy's Enemy)
+- **Condition**: You're enemy of both scapegoat and some third party
+- **Triangle**: `(you, scapegoat, third)` with `[-, -, -]` (unbalanced)
+- **Action**: Befriend third party
+- **Rationale**: "Enemy of my enemy is my friend" (strategic alliance)
+
+**Rule 3: Hear Accusation** (Information Creation)
+- **Condition**: You hear from accuser friend, no edge to scapegoat yet
+- **Action**: Create negative edge to scapegoat
+- **Rationale**: "My friend says they're bad, I believe them" (mimetic trust)
+
 ### Structural Balance
 
-Triangles are **balanced** when they have an even number of negative edges:
-- `+++` (all friends) - balanced
-- `+--` (two enemies share enemy) - balanced
-- `++-` (two friends share enemy) - **unbalanced**
-- `---` (all enemies) - **unbalanced**
+Triangles are **balanced** with even number of negative edges:
+- `(+, +, +)` - All friends (balanced)
+- `(+, -, -)` - Two enemies share enemy (balanced)
+- `(+, +, -)` - Two friends disagree (unbalanced → social pressure)
+- `(-, -, -)` - All enemies (unbalanced → alliance opportunity)
 
-### Social Pressure
+### BFS Traversal Order
 
-Nodes in unbalanced triangles are "under pressure" and must act to resolve the imbalance.
+Information spreads through friendship network:
+1. Start at initial accuser
+2. Process accuser's friends (Level 1)
+3. Process their friends (Level 2)
+4. Continue until all reachable nodes processed
+5. Process disconnected components separately
 
-### Decision Rules
+**Why BFS?** Mimics real-world rumor spreading (close friends hear first).
 
-When under pressure, actors choose based on social scores:
+### Single-Pass Convergence
 
-- **In ++- triangles** (two friends, one enemy): Hate the person with the lowest score (pile-on effect)
-- **In --- triangles** (all enemies): Ally with the person with the highest score (easiest to reconcile)
-
-### No Reversals
-
-Each actor can only flip an edge once - no taking back decisions. However, the other actor can respond (max 2 flips per edge total).
-
-### Rationality Parameter
-
-Controls how intelligently actors choose moves:
-- High rationality = considers global impact (triangle delta)
-- Low rationality = myopic/random choices
-- Affects convergence speed and outcome quality
+**Unlike iterative optimization**, this algorithm:
+- ✓ Processes each node exactly once (in BFS order)
+- ✓ Makes irreversible decisions when processed
+- ✓ Completes in O(|V| + |E|) time for sparse graphs
+- ✓ No feedback loops or re-evaluation needed
 
 ## Common Scenarios
 
-### Scapegoating (Unanimous Victimization)
+### Complete Isolation (All-Against-One)
 
 ```bash
-python cli.py --nodes Alice Betty Charlie David \
+python run.py --nodes Alice Betty Charlie David \
               --initial all-positive \
-              --perturb Alice:Betty \
-              --seed 1 \
-              --rationality 0.8
+              --scapegoat Betty \
+              --accuser Alice \
+              --seed 42
 ```
 
-Result: One person with score -3, others at +1
+Result:
+- Betty's score: -3 (all enemies)
+- Accusers: Alice, Charlie, David
+- Defenders: None
+- Contagion succeeded: Yes
 
-### Factional Split
+### Partial Scapegoating (Defenders Remain)
+
+With complex graphs or disconnected components, some defenders may remain loyal to the scapegoat.
+
+### Accuser With No Friends (Contagion Fails)
+
+If the accuser has only enemies, BFS doesn't propagate. The accusation fails (only accuser turns against scapegoat).
+
+## Architecture
+
+### Module Structure
+
+```
+src/
+├── graph.py           # SignedGraph data structure (+1/-1 edges)
+├── analyzer.py        # Triangle detection and balance analysis
+├── decision.py        # Contagion rule logic (Rules 1-3)
+├── simulator.py       # BFS-based contagion engine
+├── formatter.py       # Human/JSON/chain output formatters
+├── cli.py             # Command-line interface
+└── graph_loader.py    # Load/save graphs from files
+```
+
+### Key Classes
+
+**`SignedGraph`** (graph.py)
+- Stores nodes and signed edges (+1/-1)
+- Edges in canonical alphabetical order (undirected)
+- Methods: `add_edge()`, `flip_edge()`, `get_edge()`, `neighbors()`
+
+**`MimeticContagionSimulator`** (simulator.py)
+- Main simulation engine
+- `introduce_accusation()`: Run BFS contagion from accuser
+- `_propagate_scapegoat_contagion()`: BFS traversal with rule application
+
+**`ContagionDecision`** (simulator.py)
+- Represents one node's decision
+- Records: node, action, reason, edge flipped, sign changes
+
+**`ScapegoatResult`** (simulator.py)
+- Final simulation results
+- Contains: initial/final states, decisions, accusers, defenders, balance metrics
+
+## Performance Characteristics
+
+**Time Complexity**:
+- BFS traversal: O(|V| + |E|)
+- Per-node triangle checks: O(degree²) for Rule 2
+- Total: O(|V| + |E|) for sparse graphs (degree bounded)
+- Complete graphs: O(|V|³) worst case
+
+**Works well for**:
+- 4-50 nodes: Instant results
+- 50-200 nodes: < 1 second
+- 200-1000 nodes: < 10 seconds
+
+## Visualization
+
+Use `visualize_cascade.py` to create animated GIFs:
 
 ```bash
-python cli.py --nodes Alice Betty Charlie David \
-              --initial all-positive \
-              --perturb Alice:Betty \
-              --seed 10
+python visualize_cascade.py output/..._json.json -o plots/contagion.gif --fps 2
 ```
 
-Result: Two opposing factions, scores around ±1
+Requirements: `matplotlib`, `numpy` (install separately)
 
-### Stuck States
-
-With low rationality or complex graphs, actors may get "stuck" (under pressure but no valid moves due to no-reversal constraint).
-
-## File Structure
-
-```
-mimetic-contagion/
-├── cli.py           # Command-line interface
-├── simulator.py     # Cascade simulation engine
-├── graph.py         # Signed graph data structure
-├── analyzer.py      # Triangle detection & pressure analysis
-├── decision.py      # Mimetic decision-making logic
-├── formatter.py     # Output formatters (human/json/chain)
-├── output/          # Default output directory
-├── README.md        # This file
-└── ARCHITECTURE.md  # Design philosophy and decisions
-```
+Features:
+- Circular node layout
+- Green edges (friendship), red edges (enmity)
+- Node colors: Red (scapegoat), Blue (accusers), Green (defenders)
+- Frame-by-frame BFS propagation
+- Final state pause
 
 ## Troubleshooting
 
@@ -302,21 +348,33 @@ Always use `--seed` for reproducible results:
 --seed 42
 ```
 
-### Infinite Loops
+### Accuser Has No Friends Warning
 
-Should not occur with current implementation. If cascade exceeds `--max-steps`, it will stop and report non-convergence.
+```
+⚠ WARNING: Alice has no friends (only enemies)!
+  → Accusation cannot spread through friendship network
+```
 
-### Stuck States
+**Solution**: Choose different accuser with friends, or this is expected (isolated accuser can't credibly scapegoat).
 
-Normal behavior when actors have no valid moves. Indicates cascade has reached a local minimum but not full balance.
+### Disconnected Friendship Components
+
+If graph has isolated friendship clusters, nodes unreachable via BFS won't hear the accusation. They may remain neutral or be counted as defenders.
 
 ## Further Reading
 
-- `ARCHITECTURE.md` - Design philosophy and implementation details
-- `seed.md` - Original design document on contagion vs optimization
+- **THEORY.md** - Mathematical formalization, theorems, proofs
+- **IMPLEMENTATION.md** - Implementation details, edge cases, design decisions
+- **ARCHITECTURE.md** - High-level design philosophy
+- **CLAUDE.md** - Development guide for AI assistants
 
 ## References
 
 - René Girard - *The Scapegoat* (mimetic theory)
-- Structural Balance Theory (Heider, Cartwright & Harary)
+- René Girard - *Violence and the Sacred*
+- Structural Balance Theory (Heider 1946, Cartwright & Harary 1956)
 - Signed social networks and conflict resolution
+
+## License
+
+(Add your license here)

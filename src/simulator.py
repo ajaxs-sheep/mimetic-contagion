@@ -337,6 +337,74 @@ class MimeticContagionSimulator:
         if self.verbose:
             print(f"\nContagion complete. {len([d for d in decisions if d.action])} actions taken.", file=sys.stderr)
 
+        # CLEANUP PASS: Resolve ALL remaining --- triangles with scapegoat
+        # This ensures complete community unity (all positive edges between non-scapegoat nodes)
+        cleanup_decisions = self._resolve_community_conflicts(scapegoat)
+        if cleanup_decisions:
+            decisions.extend(cleanup_decisions)
+            if self.verbose:
+                print(f"\nCommunity unity pass: {len(cleanup_decisions)} edges flipped to positive", file=sys.stderr)
+
+        return decisions
+
+    def _resolve_community_conflicts(self, scapegoat: str) -> List[ContagionDecision]:
+        """
+        Cleanup pass: Resolve ALL remaining --- triangles involving scapegoat.
+
+        After all nodes become enemies of scapegoat, any two nodes that are enemies
+        of each other form a --- triangle with the scapegoat. Rule 2 should resolve
+        these to create complete community unity (all positive edges).
+
+        This pass ensures Girardian scapegoating: the community unites against the victim.
+
+        Args:
+            scapegoat: The scapegoat node
+
+        Returns:
+            List of ContagionDecision objects for community unification
+        """
+        import sys
+        from .decision import find_unbalanced_triangles_with_scapegoat
+
+        decisions = []
+
+        # Check each node for --- triangles with scapegoat
+        for node in self.graph.nodes:
+            if node == scapegoat:
+                continue
+
+            # Only process nodes that are enemies of scapegoat
+            if not self.graph.has_edge(node, scapegoat) or \
+               self.graph.get_edge(node, scapegoat) != -1:
+                continue
+
+            # Find all --- triangles involving this node and scapegoat
+            unbalanced_triangles = find_unbalanced_triangles_with_scapegoat(
+                self.graph, node, scapegoat
+            )
+
+            for triangle, third_node in unbalanced_triangles:
+                # Befriend the third person to resolve --- triangle
+                old_sign = self.graph.get_edge(node, third_node)
+                self.graph.flip_edge(node, third_node)
+                new_sign = self.graph.get_edge(node, third_node)
+
+                reason = f"Community unity: resolve --- triangle ({node}, {scapegoat}, {third_node})"
+
+                decision = ContagionDecision(
+                    node=node,
+                    action="befriend_other",
+                    reason=reason,
+                    edge_flipped=(node, third_node),
+                    old_sign=old_sign,
+                    new_sign=new_sign
+                )
+                decisions.append(decision)
+
+                if self.verbose:
+                    print(f"  {node} befriends {third_node} (unity against {scapegoat})", file=sys.stderr)
+                    print(f"    → {node}↔{third_node}: - → +", file=sys.stderr)
+
         return decisions
 
     def _check_all_against_one(self, scapegoat: str) -> bool:
