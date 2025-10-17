@@ -2,6 +2,19 @@
 output/
 !output/.gitkeep
 
+# Generated graphs (keep examples and README)
+graphs/*.json
+graphs/*.csv
+graphs/*.txt
+!graphs/example_*.json
+!graphs/example_*.csv
+!graphs/example_*.txt
+!graphs/README.md
+
+# Generated visualizations
+*.gif
+*.mp4
+
 # Python
 __pycache__/
 *.py[cod]

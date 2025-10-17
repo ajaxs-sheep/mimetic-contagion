@@ -68,34 +68,42 @@ class CascadeResult:
 
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""
-        return {
+        result = {
             "initial_state": self.initial_state.to_dict(),
-            "perturbation": {
-                "edge": list(self.perturbation),
-                "from_sign": self.initial_state.get_edge(*self.perturbation),
-                "to_sign": -self.initial_state.get_edge(*self.perturbation)
-            },
             "cascade": [step.to_dict() for step in self.cascade_steps],
             "final_state": self.final_state.to_dict(),
             "converged": self.converged,
             "total_steps": len(self.cascade_steps)
         }
 
+        if self.perturbation is not None:
+            result["perturbation"] = {
+                "edge": list(self.perturbation),
+                "from_sign": self.initial_state.get_edge(*self.perturbation),
+                "to_sign": -self.initial_state.get_edge(*self.perturbation)
+            }
+        else:
+            result["perturbation"] = None
+
+        return result
+
 
 class MimeticCascadeSimulator:
     """Simulates mimetic contagion in signed social graphs."""
 
-    def __init__(self, graph: SignedGraph, max_steps: int = 1000, rationality: float = 0.5):
+    def __init__(self, graph: SignedGraph, max_steps: int = 1000, rationality: float = 0.5, verbose: bool = False):
         """
         Args:
             graph: The initial signed graph
             max_steps: Maximum number of cascade steps before stopping
             rationality: Decision rationality (0.0=myopic, 1.0=globally optimal, 0.5=balanced)
+            verbose: If True, print progress updates to stderr
         """
         self.initial_graph = graph.copy()
         self.graph = graph.copy()
         self.max_steps = max_steps
         self.rationality = rationality
+        self.verbose = verbose
 
     def introduce_perturbation(self, edge: Tuple[str, str]) -> CascadeResult:
         """
@@ -135,6 +143,36 @@ class MimeticCascadeSimulator:
             converged=converged
         )
 
+    def run_from_current_state(self) -> CascadeResult:
+        """
+        Run cascade from current graph state without any perturbation.
+
+        Useful for testing if randomly initialized graphs converge naturally.
+
+        Returns:
+            CascadeResult with full simulation history
+        """
+        # Store initial state
+        initial_state = self.initial_graph.copy()
+
+        # Track actor-edge pairs (each actor can only flip an edge once)
+        self.actor_flipped_edges = set()
+
+        # No perturbation - just run from current state
+        # Run the cascade
+        cascade_steps = self._propagate_cascade()
+
+        # Check if converged
+        converged = len(cascade_steps) < self.max_steps
+
+        return CascadeResult(
+            initial_state=initial_state,
+            perturbation=None,  # No perturbation
+            cascade_steps=cascade_steps,
+            final_state=self.graph.copy(),
+            converged=converged
+        )
+
     def _propagate_cascade(self) -> List[CascadeStep]:
         """
         Propagate the cascade until stability or max steps.
@@ -148,18 +186,36 @@ class MimeticCascadeSimulator:
         Returns:
             List of CascadeStep objects
         """
+        import sys
+        import time
+
         cascade_steps = []
         step_num = 0
+        start_time = time.time()
+        last_progress_time = start_time
+
+        if self.verbose:
+            t0 = time.time()
+            initial_pressured = len(find_pressured_nodes(self.graph))
+            t_init = time.time() - t0
+            print(f"Starting cascade... {initial_pressured} initially pressured nodes (took {t_init:.3f}s to find)", file=sys.stderr)
 
         while step_num < self.max_steps:
+            step_start = time.time()
+
             # Find all currently pressured nodes
+            t0 = time.time()
             pressured_nodes = find_pressured_nodes(self.graph)
+            t_find_pressured = time.time() - t0
 
             if not pressured_nodes:
                 # No more pressured nodes, stable!
+                if self.verbose:
+                    print(f"✓ Converged at step {step_num}!", file=sys.stderr)
                 break
 
             # Collect all possible moves for this round
+            t0 = time.time()
             possible_moves = []  # List of (actor, edge, triangle_delta)
 
             for actor in pressured_nodes:
@@ -173,16 +229,23 @@ class MimeticCascadeSimulator:
                     # Calculate triangle delta for this move
                     triangle_delta = calculate_triangle_delta(self.graph, edge_to_flip)
                     possible_moves.append((actor, edge_to_flip, triangle_delta))
+            t_compute_moves = time.time() - t0
 
             if not possible_moves:
                 # All stuck, stop
+                if self.verbose:
+                    print(f"✗ All actors stuck at step {step_num}", file=sys.stderr)
                 break
 
             # Select move based on rationality parameter
+            t0 = time.time()
             selected_actor, selected_edge, selected_delta = self._select_move(possible_moves)
+            t_select = time.time() - t0
 
             # Get decision context for output
+            t0 = time.time()
             decision_context = get_decision_context(self.graph, selected_actor)
+            t_context = time.time() - t0
 
             if selected_edge is None:
                 # Selected actor is stuck
@@ -198,11 +261,14 @@ class MimeticCascadeSimulator:
                 )
                 cascade_steps.append(step)
                 step_num += 1
-                # Remove stuck actor from future consideration
-                # (they'll stay stuck, no need to keep checking)
+
+                step_time = time.time() - step_start
+                if self.verbose:
+                    print(f"  Step {step_num}: {selected_actor} STUCK | total: {step_time:.3f}s", file=sys.stderr)
                 continue
 
             # Execute the selected flip
+            t0 = time.time()
             old_sign = self.graph.get_edge(*selected_edge)
             self.graph.flip_edge(*selected_edge)
             new_sign = self.graph.get_edge(*selected_edge)
@@ -214,6 +280,7 @@ class MimeticCascadeSimulator:
             # Find new pressured nodes created by this flip
             pressured_after = find_pressured_nodes(self.graph)
             new_pressured = pressured_after - pressured_nodes
+            t_execute = time.time() - t0
 
             # Record this step
             step = CascadeStep(
@@ -228,6 +295,16 @@ class MimeticCascadeSimulator:
             cascade_steps.append(step)
 
             step_num += 1
+
+            # Verbose output every step
+            step_time = time.time() - step_start
+            if self.verbose:
+                u, v = selected_edge
+                sign_str = "+" if new_sign == 1 else "-"
+                print(f"  Step {step_num}: {selected_actor} flips {u}↔{v} → {sign_str} | "
+                      f"find: {t_find_pressured:.3f}s, moves: {t_compute_moves:.3f}s, "
+                      f"select: {t_select:.3f}s, exec: {t_execute:.3f}s | "
+                      f"total: {step_time:.3f}s", file=sys.stderr)
 
         return cascade_steps
 

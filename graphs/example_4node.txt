@@ -1,0 +1,10 @@
+# Example 4-node graph with mixed relationships
+# Format: source target sign
+# Sign: + for friendship, - for enmity
+
+A B +
+A C +
+A D -
+B C -
+B D +
+C D +

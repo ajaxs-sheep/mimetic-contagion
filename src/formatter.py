@@ -32,18 +32,22 @@ def format_human_readable(result: CascadeResult) -> str:
     lines.append(f"  Negative: {neg_edges}")
 
     # Perturbation
-    lines.append("\n=== PERTURBATION ===")
-    u, v = result.perturbation
-    old_sign = result.initial_state.get_edge(u, v)
-    new_sign = -old_sign
-    sign_str = "+" if new_sign == 1 else "-"
+    if result.perturbation:
+        lines.append("\n=== PERTURBATION ===")
+        u, v = result.perturbation
+        old_sign = result.initial_state.get_edge(u, v)
+        new_sign = -old_sign
+        sign_str = "+" if new_sign == 1 else "-"
 
-    if new_sign == -1:
-        lines.append(f"{u} accuses {v}")
+        if new_sign == -1:
+            lines.append(f"{u} accuses {v}")
+        else:
+            lines.append(f"{u} reconciles with {v}")
+
+        lines.append(f"  Edge {u}↔{v}: {_sign_str(old_sign)} → {_sign_str(new_sign)}")
     else:
-        lines.append(f"{u} reconciles with {v}")
-
-    lines.append(f"  Edge {u}↔{v}: {_sign_str(old_sign)} → {_sign_str(new_sign)}")
+        lines.append("\n=== NO PERTURBATION ===")
+        lines.append("Running cascade from initial state imbalances")
 
     # Cascade steps
     if result.cascade_steps:
@@ -143,7 +147,10 @@ def format_human_readable(result: CascadeResult) -> str:
     else:
         lines.append(f"Status: MAX STEPS REACHED ({len(result.cascade_steps)} steps)")
 
-    lines.append(f"Total flips: {len(result.cascade_steps) + 1} (including perturbation)")
+    if result.perturbation:
+        lines.append(f"Total flips: {len(result.cascade_steps) + 1} (including perturbation)")
+    else:
+        lines.append(f"Total flips: {len(result.cascade_steps)}")
 
     # Show final edge counts
     pos_edges = sum(1 for _, _, s in result.final_state.get_all_edges() if s == 1)
@@ -174,10 +181,13 @@ def format_simple_chain(result: CascadeResult) -> str:
     lines = []
 
     # Perturbation
-    u, v = result.perturbation
-    old_sign = result.initial_state.get_edge(u, v)
-    new_sign = -old_sign
-    lines.append(f"PERTURB: {u}↔{v} {_sign_str(old_sign)}→{_sign_str(new_sign)}")
+    if result.perturbation:
+        u, v = result.perturbation
+        old_sign = result.initial_state.get_edge(u, v)
+        new_sign = -old_sign
+        lines.append(f"PERTURB: {u}↔{v} {_sign_str(old_sign)}→{_sign_str(new_sign)}")
+    else:
+        lines.append("NO PERTURBATION - running from initial state")
 
     # Each step
     for step in result.cascade_steps:

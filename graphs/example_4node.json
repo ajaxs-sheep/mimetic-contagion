@@ -1,0 +1,11 @@
+{
+  "nodes": ["A", "B", "C", "D"],
+  "edges": [
+    {"source": "A", "target": "B", "sign": 1},
+    {"source": "A", "target": "C", "sign": 1},
+    {"source": "A", "target": "D", "sign": -1},
+    {"source": "B", "target": "C", "sign": -1},
+    {"source": "B", "target": "D", "sign": 1},
+    {"source": "C", "target": "D", "sign": 1}
+  ]
+}

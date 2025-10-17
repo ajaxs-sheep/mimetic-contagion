@@ -11,6 +11,7 @@ from datetime import datetime
 from .graph import SignedGraph
 from .simulator import MimeticCascadeSimulator
 from .formatter import format_json, format_human_readable, format_simple_chain
+from .graph_loader import GraphLoader
 
 
 def main():
@@ -19,34 +20,36 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Basic 4-node Salem scenario (outputs to output/ directory)
+  # Complete positive graph (small networks)
   python cli.py --nodes Alice Betty Charlie David \\
                 --initial all-positive \\
                 --perturb Alice:Betty \\
                 --seed 42
 
-  # Print to stdout instead of files
-  python cli.py --nodes Alice Betty Charlie David \\
-                --initial all-positive \\
-                --perturb Alice:Betty \\
+  # Load custom graph from file
+  python cli.py --graph-file graphs/my_network.json \\
+                --perturb A:B \\
+                --seed 42
+
+  # Load from CSV edge list
+  python cli.py --graph-file graphs/network.csv \\
+                --perturb NodeX:NodeY \\
+                --seed 42 \\
+                --rationality 0.8
+
+  # Load from text file and print to stdout
+  python cli.py --graph-file graphs/edges.txt \\
+                --perturb A:C \\
                 --seed 42 \\
                 --no-files
 
-  # Only generate specific format
-  python cli.py --nodes Alice Betty Charlie David \\
-                --initial all-positive \\
-                --perturb Alice:Betty \\
-                --seed 42 \\
-                --format chain
-
-  # Use custom output directory
-  python cli.py --nodes Alice Betty Charlie David \\
-                --initial all-positive \\
-                --perturb Alice:Betty \\
-                --seed 42 \\
-                --output-dir results
+Graph file formats:
+  - JSON: {"nodes": [...], "edges": [{"source": "A", "target": "B", "sign": 1}, ...]}
+  - CSV: source,target,sign (header required, sign can be 1/-1 or +/-)
+  - TXT: Space/tab-separated "A B +" format (one edge per line, # for comments)
 
 Notes:
+  - Use --initial for complete graphs OR --graph-file for custom graphs
   - Without --seed, results are non-deterministic (random tie-breaking)
   - Default format is 'all' (generates human.txt, json.json, chain.txt)
   - Files are automatically saved to output/ directory
@@ -57,21 +60,23 @@ Notes:
     parser.add_argument(
         "--nodes",
         nargs="+",
-        required=True,
-        help="List of node names"
+        help="List of node names (required with --initial, ignored with --graph-file)"
     )
 
     parser.add_argument(
         "--initial",
         choices=["all-positive", "all-negative"],
-        default="all-positive",
-        help="Initial graph state (default: all-positive)"
+        help="Initial graph state: all-positive or all-negative (requires --nodes)"
+    )
+
+    parser.add_argument(
+        "--graph-file",
+        help="Load graph from file (.json, .csv, or .txt format)"
     )
 
     parser.add_argument(
         "--perturb",
-        required=True,
-        help="Edge to flip as perturbation (format: Node1:Node2)"
+        help="Edge to flip as perturbation (format: Node1:Node2). Optional - if not provided, starts cascade from initial imbalanced state"
     )
 
     parser.add_argument(
@@ -113,7 +118,26 @@ Notes:
         help="Decision rationality: 0.0=random, 1.0=optimal, 0.5=balanced (default: 0.5)"
     )
 
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Show progress updates during simulation (useful for large graphs)"
+    )
+
     args = parser.parse_args()
+
+    # Validate that either --initial or --graph-file is provided (but not both)
+    if args.initial and args.graph_file:
+        print("Error: Cannot use both --initial and --graph-file. Choose one.", file=sys.stderr)
+        sys.exit(1)
+    if not args.initial and not args.graph_file:
+        print("Error: Must provide either --initial or --graph-file", file=sys.stderr)
+        sys.exit(1)
+
+    # If using --initial, --nodes is required
+    if args.initial and not args.nodes:
+        print("Error: --nodes is required when using --initial", file=sys.stderr)
+        sys.exit(1)
 
     # Warn if no seed provided (non-deterministic behavior)
     if args.seed is None:
@@ -123,34 +147,52 @@ Notes:
         random.seed(args.seed)
 
     # Create initial graph
-    if args.initial == "all-positive":
-        graph = SignedGraph.create_complete_positive(args.nodes)
+    if args.initial:
+        if args.initial == "all-positive":
+            graph = SignedGraph.create_complete_positive(args.nodes)
+        else:
+            # All negative - create complete graph with negative edges
+            graph = SignedGraph()
+            for node in args.nodes:
+                graph.add_node(node)
+            for i, u in enumerate(args.nodes):
+                for v in args.nodes[i+1:]:
+                    graph.add_edge(u, v, -1)
     else:
-        # All negative - create complete graph with negative edges
-        graph = SignedGraph()
-        for node in args.nodes:
-            graph.add_node(node)
-        for i, u in enumerate(args.nodes):
-            for v in args.nodes[i+1:]:
-                graph.add_edge(u, v, -1)
+        # Load graph from file
+        try:
+            graph = GraphLoader.load_from_file(args.graph_file)
+            print(f"Loaded graph: {len(graph.nodes)} nodes, {len(graph.edges)} edges", file=sys.stderr)
+        except FileNotFoundError:
+            print(f"Error: Graph file not found: {args.graph_file}", file=sys.stderr)
+            sys.exit(1)
+        except Exception as e:
+            print(f"Error loading graph file: {e}", file=sys.stderr)
+            sys.exit(1)
 
-    # Parse perturbation edge
-    try:
-        node1, node2 = args.perturb.split(":")
-        if node1 not in graph.nodes or node2 not in graph.nodes:
-            print(f"Error: Nodes in perturbation must be from: {args.nodes}", file=sys.stderr)
+    # Parse perturbation edge (if provided)
+    perturbation = None
+    if args.perturb:
+        try:
+            node1, node2 = args.perturb.split(":")
+            if node1 not in graph.nodes or node2 not in graph.nodes:
+                print(f"Error: Nodes in perturbation must be from the graph nodes", file=sys.stderr)
+                sys.exit(1)
+            if not graph.has_edge(node1, node2):
+                print(f"Error: No edge between {node1} and {node2}", file=sys.stderr)
+                sys.exit(1)
+            perturbation = (node1, node2)
+        except ValueError:
+            print("Error: Perturbation must be in format Node1:Node2", file=sys.stderr)
             sys.exit(1)
-        if not graph.has_edge(node1, node2):
-            print(f"Error: No edge between {node1} and {node2}", file=sys.stderr)
-            sys.exit(1)
-        perturbation = (node1, node2)
-    except ValueError:
-        print("Error: Perturbation must be in format Node1:Node2", file=sys.stderr)
-        sys.exit(1)
 
     # Run simulation
-    simulator = MimeticCascadeSimulator(graph, max_steps=args.max_steps, rationality=args.rationality)
-    result = simulator.introduce_perturbation(perturbation)
+    simulator = MimeticCascadeSimulator(graph, max_steps=args.max_steps, rationality=args.rationality, verbose=args.verbose)
+    if perturbation:
+        result = simulator.introduce_perturbation(perturbation)
+    else:
+        print("No perturbation - running cascade from initial state imbalances...", file=sys.stderr)
+        result = simulator.run_from_current_state()
 
     # Format output
     outputs = []
@@ -178,8 +220,15 @@ Notes:
         os.makedirs(args.output_dir, exist_ok=True)
 
         # Generate base filename
-        nodes_str = "-".join(args.nodes)
-        perturb_str = args.perturb.replace(":", "-")
+        if args.graph_file:
+            # Use graph filename as base
+            from os.path import splitext, basename
+            graph_basename = splitext(basename(args.graph_file))[0]
+            nodes_str = graph_basename
+        else:
+            nodes_str = "-".join(args.nodes) if args.nodes else "graph"
+
+        perturb_str = args.perturb.replace(":", "-") if args.perturb else "no-perturb"
         seed_str = f"seed{args.seed}" if args.seed is not None else "random"
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
