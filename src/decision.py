@@ -7,48 +7,60 @@ from .graph import SignedGraph
 
 
 def has_accuser_friend(graph: SignedGraph, node: str, accusers: Set[str]) -> bool:
-    """Check if node has any friends who are accusers."""
-    for accuser in accusers:
-        if graph.has_edge(node, accuser) and graph.get_edge(node, accuser) == 1:
+    """Check if node has any friends who are accusers. OPTIMIZED."""
+    # Use cached adjacency instead of iterating through accusers
+    neighbors = graph.neighbors_with_signs(node)
+    for neighbor, sign in neighbors.items():
+        if sign == 1 and neighbor in accusers:
             return True
     return False
 
 
 def has_accuser_enemy(graph: SignedGraph, node: str, accusers: Set[str]) -> bool:
-    """Check if node has any enemies who are accusers."""
-    for accuser in accusers:
-        if graph.has_edge(node, accuser) and graph.get_edge(node, accuser) == -1:
+    """Check if node has any enemies who are accusers. OPTIMIZED."""
+    # Use cached adjacency instead of iterating through accusers
+    neighbors = graph.neighbors_with_signs(node)
+    for neighbor, sign in neighbors.items():
+        if sign == -1 and neighbor in accusers:
             return True
     return False
 
 
 def find_unbalanced_triangles_with_scapegoat(graph: SignedGraph, node: str, scapegoat: str):
-    """Find all --- triangles involving this node and the scapegoat."""
+    """
+    Find all --- triangles involving this node and the scapegoat.
+
+    OPTIMIZED: Only check intersection of node's neighbors and scapegoat's neighbors.
+    A triangle (node, scapegoat, third) requires third to be neighbor of BOTH.
+    """
     from .analyzer import Triangle
 
     unbalanced = []
 
-    # Check all potential third nodes
-    for third_node in graph.nodes:
-        if third_node == node or third_node == scapegoat:
+    # Get edge to scapegoat
+    node_scapegoat = graph.get_edge(node, scapegoat)
+    if node_scapegoat != -1:
+        return []  # Can't have --- triangle if not enemy of scapegoat
+
+    # OPTIMIZATION: Only check neighbors of node (not all nodes!)
+    # Third node must be connected to node to form a triangle
+    node_neighbors = graph.neighbors_with_signs(node)
+
+    for third_node, node_third_sign in node_neighbors.items():
+        if third_node == scapegoat:
             continue
 
-        # Check if triangle exists (all three edges present)
-        if not (graph.has_edge(node, scapegoat) and
-                graph.has_edge(node, third_node) and
-                graph.has_edge(scapegoat, third_node)):
+        # Check if third_node is connected to scapegoat
+        if not graph.has_edge(scapegoat, third_node):
             continue
 
-        # Get edge signs
-        node_scapegoat = graph.get_edge(node, scapegoat)
-        node_third = graph.get_edge(node, third_node)
         scapegoat_third = graph.get_edge(scapegoat, third_node)
 
         # Check if it's a --- triangle (all negative)
-        if node_scapegoat == -1 and node_third == -1 and scapegoat_third == -1:
+        if node_third_sign == -1 and scapegoat_third == -1:
             triangle = Triangle(
                 nodes=(node, scapegoat, third_node),
-                edges=(node_scapegoat, scapegoat_third, node_third)
+                edges=(node_scapegoat, scapegoat_third, node_third_sign)
             )
             unbalanced.append((triangle, third_node))
 

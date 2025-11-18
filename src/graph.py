@@ -12,6 +12,9 @@ class SignedGraph:
     def __init__(self):
         self.nodes: Set[str] = set()
         self.edges: Dict[Tuple[str, str], int] = {}  # {(u, v): +1 or -1}
+        # OPTIMIZATION: Cache adjacency lists for O(1) neighbor access
+        # Maps: node → {neighbor: sign, neighbor: sign, ...}
+        self._adjacency: Dict[str, Dict[str, int]] = defaultdict(dict)
 
     def add_node(self, node: str):
         """Add a node to the graph."""
@@ -30,12 +33,21 @@ class SignedGraph:
         edge = self._canonical_edge(u, v)
         self.edges[edge] = sign
 
+        # OPTIMIZATION: Update adjacency cache
+        self._adjacency[u][v] = sign
+        self._adjacency[v][u] = sign
+
     def flip_edge(self, u: str, v: str):
         """Flip the sign of an edge."""
         edge = self._canonical_edge(u, v)
         if edge not in self.edges:
             raise ValueError(f"Edge {edge} does not exist")
         self.edges[edge] *= -1
+
+        # OPTIMIZATION: Update adjacency cache
+        new_sign = self.edges[edge]
+        self._adjacency[u][v] = new_sign
+        self._adjacency[v][u] = new_sign
 
     def get_edge(self, u: str, v: str) -> int:
         """Get the sign of an edge between two nodes."""
@@ -48,14 +60,12 @@ class SignedGraph:
         return edge in self.edges
 
     def neighbors(self, node: str) -> List[str]:
-        """Get all nodes connected to this node."""
-        neighbors = []
-        for (u, v) in self.edges.keys():
-            if u == node:
-                neighbors.append(v)
-            elif v == node:
-                neighbors.append(u)
-        return neighbors
+        """Get all nodes connected to this node. OPTIMIZED: O(1) cached access."""
+        return list(self._adjacency.get(node, {}).keys())
+
+    def neighbors_with_signs(self, node: str) -> Dict[str, int]:
+        """Get neighbors with edge signs. OPTIMIZED: O(1) cached access."""
+        return self._adjacency.get(node, {}).copy()
 
     def get_all_edges(self) -> List[Tuple[str, str, int]]:
         """Get all edges as (u, v, sign) tuples."""
@@ -70,6 +80,11 @@ class SignedGraph:
         new_graph = SignedGraph()
         new_graph.nodes = self.nodes.copy()
         new_graph.edges = self.edges.copy()
+        # OPTIMIZATION: Deep copy adjacency cache
+        new_graph._adjacency = {
+            node: neighbors.copy()
+            for node, neighbors in self._adjacency.items()
+        }
         return new_graph
 
     def to_dict(self) -> dict:

@@ -276,17 +276,37 @@ If the accuser has only enemies, BFS doesn't propagate. The accusation fails (on
 
 ## Architecture
 
-### Module Structure
+### Repository Structure
 
 ```
-src/
-├── graph.py           # SignedGraph data structure (+1/-1 edges)
-├── analyzer.py        # Triangle detection and balance analysis
-├── decision.py        # Contagion rule logic (Rules 1-3)
-├── simulator.py       # BFS-based contagion engine
-├── formatter.py       # Human/JSON/chain output formatters
-├── cli.py             # Command-line interface
-└── graph_loader.py    # Load/save graphs from files
+mimetic-contagion/
+├── src/                    # Core simulation engine
+│   ├── graph.py           # SignedGraph data structure (+1/-1 edges)
+│   ├── analyzer.py        # Triangle detection and balance analysis
+│   ├── decision.py        # Contagion rule logic (Rules 1-3)
+│   ├── simulator.py       # BFS-based contagion engine
+│   ├── formatter.py       # Human/JSON/chain output formatters
+│   ├── cli.py             # Command-line interface
+│   └── graph_loader.py    # Load/save graphs from files
+├── docs/                  # Documentation
+│   ├── THEORY.md          # Mathematical formalization
+│   ├── IMPLEMENTATION.md  # Implementation details
+│   ├── OPTIMIZATION_RESULTS.md  # Performance improvements
+│   └── ...                # Additional research docs
+├── visualizations/        # Visualization scripts
+│   ├── visualize_cascade.py
+│   ├── visualize_basic.py
+│   └── viz_utils.py
+├── scripts/               # Utility scripts
+│   ├── generate_graph.py
+│   └── run_tests.py
+├── tests/                 # Test suite
+├── examples/              # Example graphs
+├── graphs/                # Graph data files
+├── output/                # Simulation output
+├── run.py                 # Main entry point
+├── README.md              # This file
+└── CLAUDE.md              # AI development guide
 ```
 
 ### Key Classes
@@ -317,17 +337,20 @@ src/
 - Total: O(|V| + |E|) for sparse graphs (degree bounded)
 - Complete graphs: O(|V|³) worst case
 
-**Works well for**:
-- 4-50 nodes: Instant results
-- 50-200 nodes: < 1 second
-- 200-1000 nodes: < 10 seconds
+**Performance (after optimization)**:
+- 100 nodes: ~0.003 seconds
+- 500 nodes: ~0.043 seconds
+- 1000 nodes: ~0.154 seconds
+- 5000 nodes: ~3.7 seconds
+
+**See `docs/OPTIMIZATION_RESULTS.md` for detailed performance analysis.**
 
 ## Visualization
 
-Use `visualize_cascade.py` to create animated GIFs:
+Use visualization scripts to create animated GIFs:
 
 ```bash
-python visualize_cascade.py output/..._json.json -o plots/contagion.gif --fps 2
+python visualizations/visualize_cascade.py output/..._json.json -o plots/contagion.gif --fps 2
 ```
 
 Requirements: `matplotlib`, `numpy` (install separately)
@@ -363,9 +386,9 @@ If graph has isolated friendship clusters, nodes unreachable via BFS won't hear 
 
 ## Further Reading
 
-- **THEORY.md** - Mathematical formalization, theorems, proofs
-- **IMPLEMENTATION.md** - Implementation details, edge cases, design decisions
-- **ARCHITECTURE.md** - High-level design philosophy
+- **docs/THEORY.md** - Mathematical formalization, theorems, proofs
+- **docs/IMPLEMENTATION.md** - Implementation details, edge cases, design decisions
+- **docs/OPTIMIZATION_RESULTS.md** - Performance improvements and benchmarks
 - **CLAUDE.md** - Development guide for AI assistants
 
 ## References

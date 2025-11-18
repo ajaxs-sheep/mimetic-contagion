@@ -38,19 +38,40 @@ class Triangle:
 
 
 def find_all_triangles(graph: SignedGraph) -> List[Triangle]:
-    """Find all triangles in the graph."""
-    triangles = []
+    """
+    Find all triangles in the graph.
 
-    # Check all combinations of 3 nodes
-    for a, b, c in combinations(sorted(graph.nodes), 3):
-        # Check if all three edges exist
-        if graph.has_edge(a, b) and graph.has_edge(b, c) and graph.has_edge(a, c):
+    OPTIMIZED: For each edge, check intersection of endpoints' neighbors.
+    This is O(E × min_degree) instead of O(V³).
+    """
+    triangles = []
+    seen_triangles = set()
+
+    # Iterate through all edges
+    for (a, b), ab_sign in graph.edges.items():
+        # Get neighbors of both endpoints (using cached adjacency)
+        a_neighbors = set(graph.neighbors(a))
+        b_neighbors = set(graph.neighbors(b))
+
+        # Find common neighbors (potential third vertex)
+        common = a_neighbors & b_neighbors
+
+        for c in common:
+            # Create canonical triangle tuple (sorted order)
+            triangle_nodes = tuple(sorted([a, b, c]))
+
+            # Skip if we've seen this triangle already
+            if triangle_nodes in seen_triangles:
+                continue
+            seen_triangles.add(triangle_nodes)
+
+            # Get all three edge signs
             ab_sign = graph.get_edge(a, b)
             bc_sign = graph.get_edge(b, c)
             ac_sign = graph.get_edge(a, c)
 
             triangle = Triangle(
-                nodes=(a, b, c),
+                nodes=triangle_nodes,
                 edges=(ab_sign, bc_sign, ac_sign)
             )
             triangles.append(triangle)
