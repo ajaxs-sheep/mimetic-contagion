@@ -247,7 +247,7 @@ def force_directed_layout(graph, iterations=50, k=None):
 
 def draw_graph_state(ax, graph, positions, accusers, defenders, scapegoat,
                      initial_accuser=None, unreachable=None, communities=None,
-                     title=None, show_legend=True, show_metrics=False):
+                     title=None, show_legend=True, show_metrics=False, legend_loc='upper right'):
     """
     Draw graph state with color-coded nodes and edges.
 
@@ -264,6 +264,7 @@ def draw_graph_state(ax, graph, positions, accusers, defenders, scapegoat,
         title: Plot title (optional)
         show_legend: Show legend (default True)
         show_metrics: Show metrics overlay (default False)
+        legend_loc: Legend location (default 'upper right')
     """
     ax.clear()
     ax.set_aspect('equal')
@@ -361,7 +362,7 @@ def draw_graph_state(ax, graph, positions, accusers, defenders, scapegoat,
 
     # Add legend if requested
     if show_legend:
-        create_legend(ax, show_communities=communities is not None)
+        create_legend(ax, show_communities=communities is not None, loc=legend_loc)
 
     # Add metrics if requested
     if show_metrics:
@@ -371,8 +372,15 @@ def draw_graph_state(ax, graph, positions, accusers, defenders, scapegoat,
         add_metrics_overlay(ax, num_accusers, num_defenders, total_nodes, scapegoat)
 
 
-def create_legend(ax, show_communities=False):
-    """Add simple legend to axes."""
+def create_legend(ax, show_communities=False, loc='upper right'):
+    """
+    Add simple legend to axes.
+
+    Args:
+        ax: Matplotlib axes
+        show_communities: Whether to show community info
+        loc: Legend location (default 'upper right')
+    """
     legend_elements = [
         mpatches.Patch(color=NODE_COLORS['scapegoat'], label='Scapegoat'),
         mpatches.Patch(color=NODE_COLORS['accuser'], label='Accuser'),
@@ -382,8 +390,8 @@ def create_legend(ax, show_communities=False):
         mpatches.Patch(color=EDGE_COLORS['negative'], label='Hostility'),
     ]
 
-    # Position legend at lower right to avoid covering nodes
-    ax.legend(handles=legend_elements, loc='lower right', fontsize=8,
+    # Position legend to avoid covering nodes
+    ax.legend(handles=legend_elements, loc=loc, fontsize=8,
              framealpha=0.95, edgecolor='black')
 
 
