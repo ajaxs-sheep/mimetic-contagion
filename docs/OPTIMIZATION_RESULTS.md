@@ -69,9 +69,11 @@ Successfully optimized the mimetic contagion algorithm, achieving **850x speedup
 **Files modified:** `src/graph.py`
 
 ### 2. Optimized Cleanup Phase (Priority 2)
-**Impact:** 2500x speedup for this phase
+**Impact:** ~2x speedup for this phase
 
 **Insight:** Only pairs of scapegoat's enemies can form --- triangles with scapegoat
+
+**IMPORTANT NOTE:** At cleanup time, the scapegoat has degree ≈ V (everyone is their enemy), so k ≈ V, NOT ~20. The real speedup here comes from preventing double-counting of pairs, not from reducing the search space.
 
 **Before:**
 ```python
@@ -79,17 +81,20 @@ for node in self.graph.nodes:  # O(V)
     for third_node in graph.nodes:  # O(V)
         # Check if (node, scapegoat, third_node) is --- triangle
 ```
-Complexity: O(V²)
+Complexity: O(V²) iterations + O(E) neighbor lookups = O(V²E)
 
 **After:**
 ```python
-scapegoat_enemies = neighbors_with_signs(scapegoat)
+scapegoat_enemies = neighbors_with_signs(scapegoat)  # k ≈ V at cleanup time
 for i, enemy1 in enumerate(scapegoat_enemies):
-    for enemy2 in scapegoat_enemies[i+1:]:
+    for enemy2 in scapegoat_enemies[i+1:]:  # Check each pair once
         if get_edge(enemy1, enemy2) == -1:
             flip_edge(enemy1, enemy2)
 ```
-Complexity: O(k²) where k = scapegoat's degree (~20 for sparse graphs)
+Complexity: O(k²) where k ≈ V, so still O(V²) iterations, BUT:
+- neighbors() is now O(1) cached (not O(E))
+- Pairs checked once (not twice)
+- Real speedup: ~2x, primarily from adjacency caching
 
 **Files modified:** `src/simulator.py:_resolve_community_conflicts()`
 
@@ -169,9 +174,9 @@ Failed: 0
 
 ## Technical Debt Eliminated
 
-1. ✅ No more O(E) scans for neighbor lookups
-2. ✅ No more O(V³) brute-force triangle enumeration
-3. ✅ No more O(V²) cleanup phase checking all nodes
+1. ✅ No more O(E) scans for neighbor lookups (now O(1) cached)
+2. ✅ No more O(V³) brute-force triangle enumeration (now O(E×degree))
+3. ✅ No more O(V) iterations in triangle finding (now O(degree))
 4. ✅ No more redundant graph traversals
 
 ## Future Optimization Opportunities
@@ -187,7 +192,15 @@ However, these are **not necessary** for the current use cases. The algorithm no
 
 ## Conclusion
 
-The optimization effort successfully transformed the algorithm from O(V^2.9) empirical complexity to O(V^1.5), achieving 850x speedup at 1000 nodes. The key insight about only checking scapegoat's neighbors in the cleanup phase (contributed by the user) was particularly impactful, providing a 2500x speedup for that phase alone.
+The optimization effort successfully transformed the algorithm from O(V^2.9) empirical complexity to O(V^1.5), achieving 850x speedup at 1000 nodes.
+
+**Primary performance gains** (in order of impact):
+1. **Adjacency list caching** (10-50x): Eliminated O(E) neighbor lookups called hundreds of times
+2. **Neighbor-based triangle finding** (50-100x): Reduced O(V) iterations to O(degree) during BFS
+3. **Optimized balance check** (100-1000x): Edge-based enumeration instead of O(V³) brute force
+4. **Cleanup phase improvement** (~2x): Prevented double-counting of pairs
+
+Note: The cleanup phase optimization provides ~2x speedup (not 2500x as initially claimed), because the scapegoat has degree ≈ V at cleanup time. The major wins come from adjacency caching and algorithmic improvements throughout the BFS phase.
 
 **The algorithm now matches its theoretical O(V + E) complexity** for the BFS phase and achieves near-optimal performance for all graph operations.
 

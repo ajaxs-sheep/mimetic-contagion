@@ -1,0 +1,6 @@
+[submodule "balance-theory"]
+	path = balance-theory
+	url = https://github.com/ajaxs-sheep/balance-theory.git
+[submodule "mimetic-contagion"]
+	path = mimetic-contagion
+	url = https://github.com/ajaxs-sheep/mimetic-contagion.git
